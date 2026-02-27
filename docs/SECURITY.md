@@ -45,11 +45,30 @@ This system is designed for **development and research use**. The `--dangerously
 
 ## Container Isolation
 
+### CIS Docker Benchmark Controls
+
+All compose files enforce the following security controls:
+
+| Control | Setting | CIS Benchmark |
+|---------|---------|---------------|
+| Capabilities | `cap_drop: [ALL]` | 5.3 |
+| Privilege escalation | `security_opt: [no-new-privileges:true]` | 5.25 |
+| Root filesystem | `read_only: true` | 5.12 |
+| PID limits | `pids_limit: 256` | 5.28 |
+| Process init | `tini` as PID 1 (in base image) | 5.29 |
+| Resource limits | CPU/memory via `deploy.resources` | 5.10/5.11 |
+| Log rotation | `json-file` driver with `max-size`/`max-file` | 5.7 |
+| Non-root user | `USER node` in Dockerfile | 5.15 |
+
+Writable paths are limited to tmpfs mounts (`/tmp`, `/home/node/.config`, `/home/node/.cache`) and explicit volume mounts.
+
 ### What is isolated
 
 - Each agent runs as the `node` user (non-root) inside its container.
 - Containers have separate PID, network, and mount namespaces.
-- Resource limits (CPU, memory) prevent a single agent from exhausting the host.
+- All Linux capabilities are dropped; no privilege escalation is possible.
+- Root filesystem is read-only; agents can only write to mounted volumes and tmpfs.
+- Resource limits (CPU, memory, PIDs) prevent a single agent from exhausting the host.
 
 ### What is NOT isolated
 
@@ -74,8 +93,7 @@ The current configuration is appropriate. Use as-is.
 
 - Pin `CLAUDE_CODE_VERSION` to a specific version in `.env`.
 - Use CI/CD secret management (GitHub Actions secrets, etc.) instead of `.env` files.
-- Add `--read-only` filesystem flags where possible.
-- Set stricter resource limits.
+- Run Trivy scans on the base image (already included in CI pipeline).
 
 ### Production
 
@@ -84,5 +102,4 @@ Not recommended without:
 - Encrypting database connections with SSL.
 - Using Docker secrets or a vault for API keys.
 - Adding audit logging for all agent actions.
-- Running containers with a read-only root filesystem.
 - Implementing network policies to restrict inter-container communication.

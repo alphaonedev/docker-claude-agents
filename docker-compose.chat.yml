@@ -1,7 +1,7 @@
 ###############################################################################
 # Docker Claude Agents — Interactive Chat Mode
 #
-# Runs a single Claude agent for ad-hoc tasks and interactive sessions.
+# Single agent for ad-hoc tasks and interactive sessions.
 #
 # Usage:
 #   docker compose -f docker-compose.chat.yml run --rm claude-chat
@@ -18,15 +18,25 @@ services:
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     stdin_open: true
     tty: true
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    pids_limit: 256
+    tmpfs:
+      - /tmp:size=100M,noexec,nosuid
+      - /home/node/.config:size=50M,noexec,nosuid
+      - /home/node/.cache:size=100M,noexec,nosuid
+      - /home/node/.npm:size=50M,noexec,nosuid
+      - /home/node/.local:size=50M,noexec,nosuid
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required — see .env.example}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in .env}
       CLAUDE_AGENT_ROLE: chat
     volumes:
       - ./.claude:/home/node/.claude
-      - ./workspace:/app
-    networks:
-      - agent-net
-    restart: "no"
+      - ./workspace:/app/workspace
+    networks: [agent-net]
     logging:
       driver: json-file
       options:
@@ -37,8 +47,9 @@ services:
         limits:
           cpus: "2"
           memory: 4G
-    entrypoint: ["claude"]
-    command: ["--dangerously-skip-permissions"]
+        reservations:
+          cpus: "0.5"
+          memory: 512M
 
 networks:
   agent-net:

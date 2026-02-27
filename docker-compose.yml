@@ -1,26 +1,32 @@
 ###############################################################################
 # Docker Claude Agents — Full 6-Agent Team Orchestration
 #
-# Reference architecture for running a coordinated team of Claude Code agents.
-#
 # Usage:
-#   docker compose up --build                       # Launch entire team
-#   docker compose up --build master-controller     # Launch master only
-#   docker compose run --rm coder \
-#     --dangerously-skip-permissions "your prompt"  # One-off agent run
+#   make build-base && docker compose up --build
+#   docker compose up --build master-controller
 #
 # Prerequisites:
-#   - Copy .env.example to .env and set ANTHROPIC_API_KEY
+#   - Build base: docker build -f Dockerfile.base -t claude-agent-base .
+#   - Copy .env.example → .env and set ANTHROPIC_API_KEY
 #   - Docker Engine >= 24.0, Compose >= 2.20
-#
-# See README.md for full documentation.
 ###############################################################################
 
-# ── YAML anchors for DRY service configuration ─────────────────────────────
+# ── Shared anchors ───────────────────────────────────────────────────────────
+
 x-agent-defaults: &agent-defaults
   restart: on-failure:3
-  networks:
-    - agent-net
+  networks: [agent-net]
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  read_only: true
+  pids_limit: 256
+  tmpfs:
+    - /tmp:size=100M,noexec,nosuid
+    - /home/node/.config:size=50M,noexec,nosuid
+    - /home/node/.cache:size=100M,noexec,nosuid
+    - /home/node/.npm:size=50M,noexec,nosuid
+    - /home/node/.local:size=50M,noexec,nosuid
   logging:
     driver: json-file
     options:
@@ -40,7 +46,7 @@ x-agent-defaults: &agent-defaults
       condition: service_completed_successfully
 
 x-agent-environment: &agent-environment
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required — see .env.example}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in .env}
 
 x-agent-volumes: &agent-volumes
   - ./.claude:/home/node/.claude:ro
@@ -52,11 +58,12 @@ x-agent-volumes: &agent-volumes
 # ─────────────────────────────────────────────────────────────────────────────
 services:
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # INIT — Creates shared directory structure before agents start
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── Init — creates shared directory structure ──────────────────────────────
   task-init:
     image: alpine:3.19
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
     volumes:
       - shared-tasks:/app/tasks
       - shared-status:/app/status
@@ -68,11 +75,8 @@ services:
           mkdir -p "/app/tasks/$${agent}" "/app/status/$${agent}" "/app/output/$${agent}"
         done
         echo '{"initialized_at":"'$$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > /app/status/init.json
-        echo "[init] Shared volumes ready"
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # 1. MASTER CONTROLLER — Orchestrates all worker agents
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── 1. Master Controller ───────────────────────────────────────────────────
   master-controller:
     <<: *agent-defaults
     build:
@@ -87,11 +91,9 @@ services:
       - "--dangerously-skip-permissions"
       - "--system-prompt"
       - "/app/system-prompt.md"
-      - "Read /app/tasks/master/incoming.json. Decompose the task into subtasks and write them as JSON files to /app/tasks/{researcher,coder,reviewer,tester,deployer}/. Monitor /app/status/ for worker completion. Aggregate results from /app/output/ into /app/output/master/result.md."
+      - "Read /app/workspace/.tasks/incoming.json. Decompose the task into subtasks and delegate by writing JSON files to /app/tasks/{researcher,coder,reviewer,tester,deployer}/. Monitor /app/status/ for worker completion. Aggregate results from /app/output/ into /app/output/master/result.md."
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # 2. RESEARCHER — Information gathering and analysis
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── 2. Researcher ──────────────────────────────────────────────────────────
   researcher:
     <<: *agent-defaults
     build:
@@ -106,11 +108,9 @@ services:
       - "--dangerously-skip-permissions"
       - "--system-prompt"
       - "/app/system-prompt.md"
-      - "Read task files from /app/tasks/researcher/. Research the codebase in /app/workspace/. Write findings to /app/output/researcher/. Update /app/status/researcher/current.json with your progress."
+      - "Read task files from /app/tasks/researcher/. Research the codebase in /app/workspace/. Write findings to /app/output/researcher/. Update /app/status/researcher/current.json."
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # 3. CODER — Code implementation and bug fixes
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── 3. Coder ───────────────────────────────────────────────────────────────
   coder:
     <<: *agent-defaults
     build:
@@ -125,11 +125,9 @@ services:
       - "--dangerously-skip-permissions"
       - "--system-prompt"
       - "/app/system-prompt.md"
-      - "Read task files from /app/tasks/coder/. Implement changes in /app/workspace/. Write summaries to /app/output/coder/. Update /app/status/coder/current.json with your progress."
+      - "Read task files from /app/tasks/coder/. Implement changes in /app/workspace/. Write summaries to /app/output/coder/. Update /app/status/coder/current.json."
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # 4. REVIEWER — Code review and security auditing
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── 4. Reviewer ────────────────────────────────────────────────────────────
   reviewer:
     <<: *agent-defaults
     build:
@@ -146,9 +144,7 @@ services:
       - "/app/system-prompt.md"
       - "Read task files from /app/tasks/reviewer/. Review code in /app/workspace/ and outputs from other agents. Write review reports to /app/output/reviewer/. Update /app/status/reviewer/current.json."
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # 5. TESTER — Test authoring and execution
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── 5. Tester ──────────────────────────────────────────────────────────────
   tester:
     <<: *agent-defaults
     build:
@@ -165,9 +161,7 @@ services:
       - "/app/system-prompt.md"
       - "Read task files from /app/tasks/tester/. Write and run tests in /app/workspace/. Write reports to /app/output/tester/. Update /app/status/tester/current.json."
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # 6. DEPLOYER — CI/CD and deployment automation
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── 6. Deployer ────────────────────────────────────────────────────────────
   deployer:
     <<: *agent-defaults
     build:
@@ -184,9 +178,7 @@ services:
       - "/app/system-prompt.md"
       - "Read task files from /app/tasks/deployer/. Create deployment configs in /app/workspace/. Write results to /app/output/deployer/. Update /app/status/deployer/current.json."
 
-# ═══════════════════════════════════════════════════════════════════════════
-# VOLUMES — Shared communication channels between agents
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
   shared-tasks:
     driver: local
@@ -201,9 +193,7 @@ volumes:
     labels:
       com.claude-agents.purpose: "Results and deliverables"
 
-# ═══════════════════════════════════════════════════════════════════════════
-# NETWORK — Isolated bridge for inter-agent communication
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Network ──────────────────────────────────────────────────────────────────
 networks:
   agent-net:
     driver: bridge

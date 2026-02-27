@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -15,43 +16,27 @@ jobs:
 
       - name: Validate JSON schemas
         run: |
-          for f in schemas/*.json; do
+          for f in schemas/*.json examples/*.json mcp-config.json; do
             echo "Validating $f..."
             jq empty "$f" || exit 1
           done
-          echo "All schemas valid."
-
-      - name: Validate example task files
-        run: |
-          for f in examples/*.json; do
-            echo "Validating $f..."
-            jq empty "$f" || exit 1
-          done
-          echo "All examples valid."
-
-      - name: Validate MCP config
-        run: jq empty mcp-config.json
+          echo "All JSON valid."
 
       - name: Validate Docker Compose files
         run: |
-          # Create minimal .env for config validation
-          echo "ANTHROPIC_API_KEY=test-key-for-validation" > .env
+          echo "ANTHROPIC_API_KEY=test-key" > .env
           echo "GITHUB_TOKEN=test-token" >> .env
           echo "BRAVE_API_KEY=test-key" >> .env
           echo "POSTGRES_PASSWORD=test-pass" >> .env
 
-          echo "Validating docker-compose.yml..."
-          docker compose config --quiet
-
-          echo "Validating docker-compose.chat.yml..."
-          docker compose -f docker-compose.chat.yml config --quiet
-
-          echo "Validating docker-compose.cowork.yml..."
-          docker compose -f docker-compose.cowork.yml config --quiet
-
-          echo "Validating docker-compose.mcp.yml (overlay)..."
-          docker compose -f docker-compose.yml -f docker-compose.mcp.yml config --quiet
-
+          for desc_file in \
+            "docker-compose.yml" \
+            "docker-compose.chat.yml" \
+            "docker-compose.cowork.yml" \
+            "docker-compose.yml -f docker-compose.mcp.yml"; do
+            echo "Validating ${desc_file}..."
+            docker compose -f ${desc_file} config --quiet || exit 1
+          done
           echo "All compose files valid."
 
   lint:
@@ -59,10 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
-
       - name: Lint scripts
         run: shellcheck scripts/*.sh
 
@@ -77,15 +60,41 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build base image
-        run: docker build -f Dockerfile.base -t claude-agent-base .
+        run: |
+          docker build -f Dockerfile.base -t claude-agent-base \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg VCS_REF="${GITHUB_SHA:-unknown}" \
+            .
 
       - name: Build agent images
         run: |
           for agent in master-controller researcher coder reviewer tester deployer; do
             echo "Building $agent..."
-            docker build -t "claude-agent-${agent}" "./agents/${agent}/"
+            docker build -t "claude-agent-${agent}" "./agents/${agent}/" || exit 1
           done
           echo "All agent images built."
+
+  scan:
+    name: Image Security Scan
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build base image for scanning
+        run: |
+          docker build -f Dockerfile.base -t claude-agent-base \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "claude-agent-base"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
 
   structure:
     name: Verify Project Structure
@@ -108,6 +117,9 @@ jobs:
             "mcp-config.json"
             "README.md"
             "LICENSE"
+            "VERSION"
+            "CHANGELOG.md"
+            "CONTRIBUTING.md"
             "schemas/task.schema.json"
             "schemas/status.schema.json"
             "schemas/output.schema.json"
@@ -121,21 +133,25 @@ jobs:
 
           AGENTS=(master-controller researcher coder reviewer tester deployer)
 
+          FAIL=0
           for f in "${REQUIRED_FILES[@]}"; do
-            [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+            [ -f "$f" ] || { echo "MISSING: $f"; FAIL=1; }
           done
 
           for agent in "${AGENTS[@]}"; do
             for f in Dockerfile system-prompt.md CLAUDE.md; do
-              [ -f "agents/$agent/$f" ] || { echo "MISSING: agents/$agent/$f"; exit 1; }
+              [ -f "agents/$agent/$f" ] || { echo "MISSING: agents/$agent/$f"; FAIL=1; }
             done
           done
 
+          [ "$FAIL" -eq 0 ] || exit 1
           echo "All required files present."
 
       - name: Check scripts are executable
         run: |
+          FAIL=0
           for f in scripts/*.sh; do
-            [ -x "$f" ] || { echo "NOT EXECUTABLE: $f"; exit 1; }
+            [ -x "$f" ] || { echo "NOT EXECUTABLE: $f"; FAIL=1; }
           done
+          [ "$FAIL" -eq 0 ] || exit 1
           echo "All scripts executable."

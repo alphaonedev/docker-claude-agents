@@ -16,4 +16,4 @@ check_workspace
 
 print_banner "Interactive Chat"
 
-docker compose -f docker-compose.chat.yml run --rm claude-chat "$@"
+exec docker compose -f docker-compose.chat.yml run --rm claude-chat "$@"

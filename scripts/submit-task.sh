@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 ###############################################################################
-# submit-task.sh — Submit a task to the master controller for multi-agent work
+# submit-task.sh — Submit a task to the master controller
 #
-# Writes a task file to a temporary volume, then launches all agents.
-# The master controller reads the task, decomposes it, and delegates.
+# Writes a task JSON to workspace/.tasks/ then launches the 6-agent team.
 #
 # Usage:
 #   ./scripts/submit-task.sh "Build a REST API with Express.js"
@@ -12,7 +11,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
-# ── Parse arguments ────────────────────────────────────────────────────────
+# ── Parse arguments ──────────────────────────────────────────────────────────
 PRIORITY="high"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -34,33 +33,27 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ -z "${1:-}" ]; then
-  log_fatal "No task description provided. Run: $0 --help"
-fi
+[ -z "${1:-}" ] && log_fatal "No task description provided. Run: $0 --help"
 
 check_docker
 check_api_key
 check_workspace
+ensure_base_image
 
 TASK_DESCRIPTION="$1"
 TASK_ID="task-$(date +%Y%m%d-%H%M%S)-$$"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# ── Write task file using jq for safe JSON encoding ────────────────────────
-TASK_DIR="./workspace/.tasks/master"
-mkdir -p "$TASK_DIR"
+# ── Write task file atomically using jq for safe JSON encoding ───────────────
+TASK_FILE="./workspace/.tasks/incoming.json"
 
-jq -n \
+write_json "$TASK_FILE" "$(jq -n \
   --arg id "$TASK_ID" \
   --arg desc "$TASK_DESCRIPTION" \
   --arg ts "$TIMESTAMP" \
   --arg pri "$PRIORITY" \
-  '{
-    task_id: $id,
-    description: $desc,
-    submitted_at: $ts,
-    priority: $pri
-  }' > "${TASK_DIR}/incoming.json"
+  '{task_id: $id, description: $desc, submitted_at: $ts, priority: $pri}'
+)"
 
 print_banner "Task Submitted"
 log_ok "ID:       ${TASK_ID}"
@@ -70,4 +63,4 @@ echo ""
 log_info "Starting 6-agent system..."
 echo ""
 
-docker compose up --build
+exec docker compose up --build

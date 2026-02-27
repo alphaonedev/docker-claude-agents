@@ -28,6 +28,6 @@ print_banner "Single Task (Autonomous)"
 log_info "Task: ${TASK_PROMPT}"
 echo ""
 
-docker compose -f docker-compose.chat.yml run --rm claude-chat \
+exec docker compose -f docker-compose.chat.yml run --rm claude-chat \
   --dangerously-skip-permissions \
   "$TASK_PROMPT"

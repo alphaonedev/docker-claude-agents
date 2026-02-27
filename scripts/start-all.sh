@@ -13,6 +13,7 @@ source "${SCRIPT_DIR}/lib.sh"
 check_docker
 check_api_key
 check_workspace
+ensure_base_image
 
 print_banner "Full Team (6 Agents)"
 
@@ -24,4 +25,4 @@ log_info "Tester             — test authoring & execution"
 log_info "Deployer           — CI/CD & infrastructure"
 echo ""
 
-docker compose up --build "$@"
+exec docker compose up --build "$@"

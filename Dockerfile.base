@@ -1,54 +1,51 @@
 ###############################################################################
 # Docker Claude Agents — Base Image
 #
-# Provides the foundational Claude Code runtime that all agent images extend.
+# Single source of truth for the Claude Code runtime. All agent images
+# extend this via FROM claude-agent-base.
+#
 # Build:  docker build -f Dockerfile.base -t claude-agent-base .
 ###############################################################################
-FROM node:22-slim AS base
+FROM node:22-slim
 
-# ── Metadata ────────────────────────────────────────────────────────────────
-LABEL maintainer="docker-claude-agents"
-LABEL org.opencontainers.image.title="Claude Agent Base"
-LABEL org.opencontainers.image.description="Base image for autonomous Claude Code agents"
-LABEL org.opencontainers.image.source="https://github.com/alphaonedev/docker-claude-agents"
-LABEL org.opencontainers.image.licenses="MIT"
+# ── OCI metadata ─────────────────────────────────────────────────────────────
+ARG BUILD_DATE
+ARG VCS_REF
+LABEL maintainer="docker-claude-agents" \
+      org.opencontainers.image.title="Claude Agent Base" \
+      org.opencontainers.image.description="Base runtime for autonomous Claude Code agents" \
+      org.opencontainers.image.source="https://github.com/alphaonedev/docker-claude-agents" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}"
 
-# ── System dependencies ────────────────────────────────────────────────────
+# ── System dependencies ─────────────────────────────────────────────────────
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        git \
-        curl \
-        jq \
-        ca-certificates \
-        procps; \
+        git curl jq ca-certificates tini; \
     rm -rf /var/lib/apt/lists/*
 
-# ── Claude Code CLI (pin to exact version for reproducibility) ─────────────
+# ── Claude Code CLI ─────────────────────────────────────────────────────────
 ARG CLAUDE_CODE_VERSION=latest
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && \
     npm cache clean --force
 
-# ── Workspace & permissions ────────────────────────────────────────────────
+# ── Workspace layout ────────────────────────────────────────────────────────
 WORKDIR /app
-
-RUN mkdir -p \
-      /home/node/.claude \
-      /app/tasks \
-      /app/status \
-      /app/output \
-      /app/workspace && \
+RUN mkdir -p /home/node/.claude /app/tasks /app/status /app/output /app/workspace && \
     chown -R node:node /home/node /app
 
-# ── Runtime configuration ──────────────────────────────────────────────────
-ENV NODE_ENV=production
-ENV CLAUDE_AGENT_ROLE=base
+# ── Runtime ──────────────────────────────────────────────────────────────────
+ENV NODE_ENV=production \
+    CLAUDE_AGENT_ROLE=base
 
 USER node
 
-# ── Health check — verify the claude process is alive ──────────────────────
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD pgrep -f "claude" > /dev/null || exit 1
-
-ENTRYPOINT ["claude"]
+# PID 1 signal handling via tini
+ENTRYPOINT ["tini", "--", "claude"]
 CMD ["--dangerously-skip-permissions"]
+
+# Verify main process is alive; 60s start-period accounts for node boot time
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -x node > /dev/null || exit 1

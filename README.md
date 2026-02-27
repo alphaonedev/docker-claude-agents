@@ -50,7 +50,8 @@ cd docker-claude-agents
 make setup                         # creates .env from template
 # Edit .env → set ANTHROPIC_API_KEY
 
-# 3. Run
+# 3. Build & Run
+make build                         # builds base + agent images
 make team                          # full 6-agent system
 # — or —
 make chat                          # single interactive agent
@@ -93,7 +94,7 @@ docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build
 ```
 docker-claude-agents/
 ├── Makefile                     # All common operations
-├── Dockerfile.base              # Base image for single-agent use
+├── Dockerfile.base              # Base image (all agents extend this)
 ├── docker-compose.yml           # Full 6-agent orchestration
 ├── docker-compose.chat.yml      # Interactive single-agent mode
 ├── docker-compose.cowork.yml    # Lead + reviewer pair mode
@@ -104,8 +105,8 @@ docker-claude-agents/
 │
 ├── agents/                      # One directory per agent role
 │   ├── master-controller/
-│   │   ├── Dockerfile           # Agent-specific image
-│   │   ├── system-prompt.md     # Detailed role + protocol
+│   │   ├── Dockerfile           # Thin layer (4 lines, extends base)
+│   │   ├── system-prompt.md     # Role + protocol (~35 lines)
 │   │   └── CLAUDE.md            # Claude Code project instructions
 │   ├── researcher/
 │   ├── coder/
@@ -135,8 +136,13 @@ docker-claude-agents/
 │
 ├── docs/
 │   ├── ARCHITECTURE.md          # System design deep-dive
-│   ├── SECURITY.md              # Security considerations
+│   ├── SECURITY.md              # Security model + CIS controls
 │   └── TROUBLESHOOTING.md       # Common issues and fixes
+│
+├── VERSION                      # Semantic version
+├── CHANGELOG.md                 # Release history
+├── CONTRIBUTING.md              # Contributor guide
+├── CODE_OF_CONDUCT.md           # Community standards
 │
 └── workspace/                   # Mount your code here
 ```
@@ -229,6 +235,8 @@ Add custom MCP servers by extending `docker-compose.mcp.yml`.
 - **File-based IPC** — Agents communicate via JSON files on shared volumes, not network calls. This is simple, debuggable, and requires no additional infrastructure.
 - **Autonomous execution** — All agents run with `--dangerously-skip-permissions` for fully unattended operation.
 - **Auth persistence** — `.claude/` is mounted read-only to avoid re-authentication across restarts.
+- **Single base image** — All 6 agents extend `claude-agent-base` via thin 4-line Dockerfiles (no duplication).
+- **CIS Docker Benchmark** — `cap_drop: ALL`, `no-new-privileges`, `read_only` rootfs, `pids_limit`, `tini` as PID 1.
 - **YAML anchors** — `docker-compose.yml` uses `x-agent-defaults` to eliminate repetition across 6 services.
 - **Resource limits** — Every service has CPU/memory limits and log rotation to prevent resource exhaustion.
 - **Init service** — A lightweight Alpine container creates the directory structure on shared volumes before agents start.
@@ -237,7 +245,7 @@ Add custom MCP servers by extending `docker-compose.mcp.yml`.
 
 ### Adding a new agent
 
-1. Create `agents/your-agent/{Dockerfile,system-prompt.md,CLAUDE.md}`
+1. Create `agents/your-agent/{Dockerfile,system-prompt.md,CLAUDE.md}` (Dockerfile: 4 lines extending `claude-agent-base`)
 2. Add the service to `docker-compose.yml` (copy an existing agent block)
 3. Add the agent name to the `task-init` service's directory loop
 4. Update the master controller's system prompt to know about the new agent

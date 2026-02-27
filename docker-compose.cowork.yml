@@ -9,13 +9,24 @@
 
 x-cowork-defaults: &cowork-defaults
   restart: on-failure:3
-  networks:
-    - agent-net
+  networks: [agent-net]
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  read_only: true
+  pids_limit: 256
+  tmpfs:
+    - /tmp:size=100M,noexec,nosuid
+    - /home/node/.config:size=50M,noexec,nosuid
+    - /home/node/.cache:size=100M,noexec,nosuid
+    - /home/node/.npm:size=50M,noexec,nosuid
+    - /home/node/.local:size=50M,noexec,nosuid
   logging:
     driver: json-file
     options:
       max-size: "10m"
       max-file: "3"
+      tag: "{{.Name}}"
   deploy:
     resources:
       limits:
@@ -29,7 +40,7 @@ x-cowork-defaults: &cowork-defaults
       condition: service_completed_successfully
 
 x-cowork-environment: &cowork-environment
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required — see .env.example}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in .env}
 
 x-cowork-volumes: &cowork-volumes
   - ./.claude:/home/node/.claude:ro
@@ -40,9 +51,12 @@ x-cowork-volumes: &cowork-volumes
 
 services:
 
-  # ── Init service ──────────────────────────────────────────────────────────
+  # ── Init ───────────────────────────────────────────────────────────────────
   cowork-init:
     image: alpine:3.19
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
     volumes:
       - cowork-tasks:/app/tasks
       - cowork-status:/app/status
@@ -53,9 +67,8 @@ services:
         for agent in lead reviewer; do
           mkdir -p "/app/tasks/$${agent}" "/app/status/$${agent}" "/app/output/$${agent}"
         done
-        echo "[init] Cowork volumes ready"
 
-  # ── Lead Agent — Plans and implements ─────────────────────────────────────
+  # ── Lead Agent — plans and implements ──────────────────────────────────────
   lead-agent:
     <<: *cowork-defaults
     build:
@@ -70,7 +83,7 @@ services:
       - "--dangerously-skip-permissions"
       - "Read the task from /app/tasks/lead/incoming.json. Implement the solution in /app/workspace/. Write a summary to /app/output/lead/summary.md. Write {\"status\":\"completed\"} to /app/status/lead/current.json when finished."
 
-  # ── Review Agent — Reviews and validates ──────────────────────────────────
+  # ── Review Agent — reviews and validates ───────────────────────────────────
   review-agent:
     <<: *cowork-defaults
     build:
@@ -83,7 +96,7 @@ services:
     volumes: *cowork-volumes
     command:
       - "--dangerously-skip-permissions"
-      - "Poll /app/status/lead/current.json until the lead agent status is 'completed' (check every 10 seconds, timeout after 10 minutes). Then review code in /app/workspace/ and the summary at /app/output/lead/summary.md. Write your review to /app/output/reviewer/review.md."
+      - "Poll /app/status/lead/current.json until status is 'completed' (check every 10s, timeout after 10 minutes). Then review code in /app/workspace/ and the summary at /app/output/lead/summary.md. Write your review to /app/output/reviewer/review.md."
 
 volumes:
   cowork-tasks:

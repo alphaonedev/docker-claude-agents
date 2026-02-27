@@ -17,12 +17,13 @@ source "${SCRIPT_DIR}/lib.sh"
 check_docker
 check_api_key
 check_workspace
+ensure_base_image
 
 # Validate MCP-specific environment
 set -a; source .env; set +a
 
-[ -z "${GITHUB_TOKEN:-}" ]     && log_warn "GITHUB_TOKEN not set — GitHub MCP will not start."
-[ -z "${BRAVE_API_KEY:-}" ]    && log_warn "BRAVE_API_KEY not set — Brave Search MCP will not start."
+[ -z "${GITHUB_TOKEN:-}" ]      && log_warn "GITHUB_TOKEN not set — GitHub MCP will not start."
+[ -z "${BRAVE_API_KEY:-}" ]     && log_warn "BRAVE_API_KEY not set — Brave Search MCP will not start."
 [ -z "${POSTGRES_PASSWORD:-}" ] && log_warn "POSTGRES_PASSWORD not set — PostgreSQL MCP will not start."
 
 print_banner "Full Team + MCP Services"
@@ -31,4 +32,4 @@ log_info "Agents:  6 (master + 5 specialists)"
 log_info "MCP:     GitHub, Filesystem, Brave Search, PostgreSQL"
 echo ""
 
-docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build "$@"
+exec docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build "$@"

@@ -37,11 +37,14 @@ If no tasks are found, the agent writes `{"status": "idle"}` and exits.
 ## Volume Architecture
 
 ```
+Bind Mount (workspace/.tasks/)
+─────────────────────────────────────────────────────────────
+workspace/.tasks/
+└── incoming.json                ← User-submitted task (via submit-task.sh)
+
 Docker Named Volumes
 ─────────────────────────────────────────────────────────────
-shared-tasks/                    ← Task assignment queue
-├── master/
-│   └── incoming.json            ← User-submitted task
+shared-tasks/                    ← Inter-agent task delegation
 ├── researcher/
 │   └── task-research-001.json   ← Subtask from master
 ├── coder/
@@ -133,7 +136,22 @@ All services share the `agent-net` bridge network. Docker's built-in DNS allows 
 | `docker-compose.cowork.yml` | Lead + reviewer pair | `docker compose -f docker-compose.cowork.yml up` |
 | `docker-compose.mcp.yml` | MCP overlay (extends core) | `docker compose -f docker-compose.yml -f docker-compose.mcp.yml up` |
 
-The core `docker-compose.yml` uses YAML anchors (`x-agent-defaults`, `x-agent-environment`, `x-agent-volumes`) to define shared configuration once and reference it across all 6 agent services.
+The core `docker-compose.yml` uses YAML anchors (`x-agent-defaults`, `x-agent-environment`, `x-agent-volumes`) to define shared configuration once and reference it across all 6 agent services. All compose files include CIS Docker Benchmark hardening (cap_drop, security_opt, read_only, pids_limit).
+
+## Image Strategy
+
+```
+node:22-slim
+    └── claude-agent-base (Dockerfile.base)    ← single source of truth
+            ├── master-controller (4-line Dockerfile: FROM + COPY + ENV)
+            ├── researcher
+            ├── coder
+            ├── reviewer
+            ├── tester
+            └── deployer
+```
+
+All agent Dockerfiles are thin layers (4 lines) that extend `claude-agent-base`. The base image contains all shared dependencies (Node.js, Claude Code CLI, tini, git, jq, curl). Agent images only add their `system-prompt.md` and `CLAUDE.md`.
 
 ## Init Service
 
@@ -152,8 +170,8 @@ All agent services use `depends_on: task-init: condition: service_completed_succ
 1. Create the agent directory:
    ```
    agents/your-agent/
-   ├── Dockerfile        # Copy from an existing agent, change labels
-   ├── system-prompt.md  # Define role, workflow, error handling
+   ├── Dockerfile        # 4 lines: FROM claude-agent-base, LABEL, COPY, ENV
+   ├── system-prompt.md  # Define role, workflow (~30 focused lines)
    └── CLAUDE.md         # Concise project instructions
    ```
 
