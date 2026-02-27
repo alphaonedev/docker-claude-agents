@@ -1,11 +1,12 @@
 ###############################################################################
-# Docker Claude Agents - Interactive Chat Mode
+# Docker Claude Agents — Interactive Chat Mode
+#
+# Runs a single Claude agent for ad-hoc tasks and interactive sessions.
 #
 # Usage:
 #   docker compose -f docker-compose.chat.yml run --rm claude-chat
-#
-# This compose file runs a single interactive Claude agent for ad-hoc tasks.
-# Use this for one-off commands, debugging, or interactive sessions.
+#   docker compose -f docker-compose.chat.yml run --rm claude-chat \
+#     --dangerously-skip-permissions "Refactor this codebase"
 ###############################################################################
 
 services:
@@ -13,17 +14,29 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.base
-    container_name: claude_chat
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     stdin_open: true
     tty: true
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required — see .env.example}
+      CLAUDE_AGENT_ROLE: chat
     volumes:
       - ./.claude:/home/node/.claude
       - ./workspace:/app
     networks:
       - agent-net
-    # Interactive mode - drops you into Claude CLI
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
     entrypoint: ["claude"]
     command: ["--dangerously-skip-permissions"]
 

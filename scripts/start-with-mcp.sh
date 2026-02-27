@@ -1,24 +1,34 @@
 #!/usr/bin/env bash
 ###############################################################################
-# start-with-mcp.sh - Launch agents with MCP servers (GitHub, DB, Search)
+# start-with-mcp.sh — Launch agents with MCP tool servers
+#
+# Adds GitHub, Brave Search, Filesystem, and PostgreSQL MCP servers.
+#
+# Usage:
+#   ./scripts/start-with-mcp.sh
+#   ./scripts/start-with-mcp.sh -d
+#
+# Prerequisites (in .env):
+#   GITHUB_TOKEN, BRAVE_API_KEY, POSTGRES_PASSWORD
 ###############################################################################
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib.sh"
 
-cd "$PROJECT_DIR"
+check_docker
+check_api_key
+check_workspace
 
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found. Copy .env.example to .env and set your API key."
-    exit 1
-fi
+# Validate MCP-specific environment
+set -a; source .env; set +a
 
-echo "=== Docker Claude Agents - Full Stack with MCP Services ==="
-echo ""
-echo "Agents: 6 (master + 5 workers)"
-echo "MCP Services: GitHub, Filesystem, Brave Search, PostgreSQL"
-echo "Database: PostgreSQL 15"
+[ -z "${GITHUB_TOKEN:-}" ]     && log_warn "GITHUB_TOKEN not set — GitHub MCP will not start."
+[ -z "${BRAVE_API_KEY:-}" ]    && log_warn "BRAVE_API_KEY not set — Brave Search MCP will not start."
+[ -z "${POSTGRES_PASSWORD:-}" ] && log_warn "POSTGRES_PASSWORD not set — PostgreSQL MCP will not start."
+
+print_banner "Full Team + MCP Services"
+
+log_info "Agents:  6 (master + 5 specialists)"
+log_info "MCP:     GitHub, Filesystem, Brave Search, PostgreSQL"
 echo ""
 
 docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build "$@"

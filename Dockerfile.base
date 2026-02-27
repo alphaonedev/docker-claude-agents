@@ -1,23 +1,54 @@
-FROM node:22-slim
+###############################################################################
+# Docker Claude Agents — Base Image
+#
+# Provides the foundational Claude Code runtime that all agent images extend.
+# Build:  docker build -f Dockerfile.base -t claude-agent-base .
+###############################################################################
+FROM node:22-slim AS base
 
-# Install git and essential tools for Claude to function
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+# ── Metadata ────────────────────────────────────────────────────────────────
+LABEL maintainer="docker-claude-agents"
+LABEL org.opencontainers.image.title="Claude Agent Base"
+LABEL org.opencontainers.image.description="Base image for autonomous Claude Code agents"
+LABEL org.opencontainers.image.source="https://github.com/alphaonedev/docker-claude-agents"
+LABEL org.opencontainers.image.licenses="MIT"
 
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
+# ── System dependencies ────────────────────────────────────────────────────
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        jq \
+        ca-certificates \
+        procps; \
+    rm -rf /var/lib/apt/lists/*
 
-# Create a workspace
+# ── Claude Code CLI (pin to exact version for reproducibility) ─────────────
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && \
+    npm cache clean --force
+
+# ── Workspace & permissions ────────────────────────────────────────────────
 WORKDIR /app
 
-# Required: Claude needs a home directory to store its auth/config
-RUN mkdir -p /home/node/.claude && chown -R node:node /home/node /app
+RUN mkdir -p \
+      /home/node/.claude \
+      /app/tasks \
+      /app/status \
+      /app/output \
+      /app/workspace && \
+    chown -R node:node /home/node /app
+
+# ── Runtime configuration ──────────────────────────────────────────────────
+ENV NODE_ENV=production
+ENV CLAUDE_AGENT_ROLE=base
 
 USER node
 
-# Default command for unattended operation
+# ── Health check — verify the claude process is alive ──────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD pgrep -f "claude" > /dev/null || exit 1
+
 ENTRYPOINT ["claude"]
 CMD ["--dangerously-skip-permissions"]

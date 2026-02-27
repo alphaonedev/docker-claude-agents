@@ -1,203 +1,211 @@
 ###############################################################################
-# Docker Claude Agents - Full 6-Agent Orchestration
+# Docker Claude Agents — Full 6-Agent Team Orchestration
+#
+# Reference architecture for running a coordinated team of Claude Code agents.
 #
 # Usage:
-#   docker compose up --build                    # Launch all agents
-#   docker compose up --build master-controller  # Launch master only
-#   docker compose run --rm coder --dangerously-skip-permissions "your prompt"
+#   docker compose up --build                       # Launch entire team
+#   docker compose up --build master-controller     # Launch master only
+#   docker compose run --rm coder \
+#     --dangerously-skip-permissions "your prompt"  # One-off agent run
 #
 # Prerequisites:
-#   - Set ANTHROPIC_API_KEY in .env or environment
+#   - Copy .env.example to .env and set ANTHROPIC_API_KEY
+#   - Docker Engine >= 24.0, Compose >= 2.20
+#
+# See README.md for full documentation.
 ###############################################################################
 
+# ── YAML anchors for DRY service configuration ─────────────────────────────
+x-agent-defaults: &agent-defaults
+  restart: on-failure:3
+  networks:
+    - agent-net
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+      tag: "{{.Name}}"
+  deploy:
+    resources:
+      limits:
+        cpus: "2"
+        memory: 4G
+      reservations:
+        cpus: "0.5"
+        memory: 512M
+  depends_on:
+    task-init:
+      condition: service_completed_successfully
+
+x-agent-environment: &agent-environment
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required — see .env.example}
+
+x-agent-volumes: &agent-volumes
+  - ./.claude:/home/node/.claude:ro
+  - ./workspace:/app/workspace
+  - shared-tasks:/app/tasks
+  - shared-status:/app/status
+  - shared-output:/app/output
+
+# ─────────────────────────────────────────────────────────────────────────────
 services:
-  # =========================================================================
-  # 1. MASTER CONTROLLER - Orchestrates all worker agents
-  # =========================================================================
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # INIT — Creates shared directory structure before agents start
+  # ═══════════════════════════════════════════════════════════════════════════
+  task-init:
+    image: alpine:3.19
+    volumes:
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    entrypoint: ["/bin/sh", "-euxc"]
+    command:
+      - |
+        for agent in master researcher coder reviewer tester deployer; do
+          mkdir -p "/app/tasks/$${agent}" "/app/status/$${agent}" "/app/output/$${agent}"
+        done
+        echo '{"initialized_at":"'$$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > /app/status/init.json
+        echo "[init] Shared volumes ready"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 1. MASTER CONTROLLER — Orchestrates all worker agents
+  # ═══════════════════════════════════════════════════════════════════════════
   master-controller:
+    <<: *agent-defaults
     build:
       context: ./agents/master-controller
-      dockerfile: Dockerfile
-    container_name: claude_master_controller
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=master-controller
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the master controller. Read the task from /app/tasks/master/incoming.json, decompose it into subtasks, and write them to the appropriate agent task directories. Monitor /app/status/ for completion."
-    depends_on:
-      task-init:
-        condition: service_completed_successfully
+      <<: *agent-environment
+      CLAUDE_AGENT_ROLE: master-controller
+    volumes: *agent-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "--system-prompt"
+      - "/app/system-prompt.md"
+      - "Read /app/tasks/master/incoming.json. Decompose the task into subtasks and write them as JSON files to /app/tasks/{researcher,coder,reviewer,tester,deployer}/. Monitor /app/status/ for worker completion. Aggregate results from /app/output/ into /app/output/master/result.md."
 
-  # =========================================================================
-  # 2. RESEARCHER AGENT - Information gathering and analysis
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 2. RESEARCHER — Information gathering and analysis
+  # ═══════════════════════════════════════════════════════════════════════════
   researcher:
+    <<: *agent-defaults
     build:
       context: ./agents/researcher
-      dockerfile: Dockerfile
-    container_name: claude_researcher
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=researcher
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the researcher agent. Check /app/tasks/researcher/ for task files. For each task, research the workspace, write findings to /app/output/researcher/, and update your status in /app/status/researcher/current.json."
-    depends_on:
-      task-init:
-        condition: service_completed_successfully
+      <<: *agent-environment
+      CLAUDE_AGENT_ROLE: researcher
+    volumes: *agent-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "--system-prompt"
+      - "/app/system-prompt.md"
+      - "Read task files from /app/tasks/researcher/. Research the codebase in /app/workspace/. Write findings to /app/output/researcher/. Update /app/status/researcher/current.json with your progress."
 
-  # =========================================================================
-  # 3. CODER AGENT - Code implementation and bug fixes
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 3. CODER — Code implementation and bug fixes
+  # ═══════════════════════════════════════════════════════════════════════════
   coder:
+    <<: *agent-defaults
     build:
       context: ./agents/coder
-      dockerfile: Dockerfile
-    container_name: claude_coder
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=coder
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the coder agent. Check /app/tasks/coder/ for task files. For each task, implement the code changes in /app/workspace/, write summaries to /app/output/coder/, and update your status in /app/status/coder/current.json."
-    depends_on:
-      task-init:
-        condition: service_completed_successfully
+      <<: *agent-environment
+      CLAUDE_AGENT_ROLE: coder
+    volumes: *agent-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "--system-prompt"
+      - "/app/system-prompt.md"
+      - "Read task files from /app/tasks/coder/. Implement changes in /app/workspace/. Write summaries to /app/output/coder/. Update /app/status/coder/current.json with your progress."
 
-  # =========================================================================
-  # 4. REVIEWER AGENT - Code review and security auditing
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 4. REVIEWER — Code review and security auditing
+  # ═══════════════════════════════════════════════════════════════════════════
   reviewer:
+    <<: *agent-defaults
     build:
       context: ./agents/reviewer
-      dockerfile: Dockerfile
-    container_name: claude_reviewer
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=reviewer
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the reviewer agent. Check /app/tasks/reviewer/ for task files. For each task, review code in /app/workspace/, write review reports to /app/output/reviewer/, and update your status in /app/status/reviewer/current.json."
-    depends_on:
-      task-init:
-        condition: service_completed_successfully
+      <<: *agent-environment
+      CLAUDE_AGENT_ROLE: reviewer
+    volumes: *agent-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "--system-prompt"
+      - "/app/system-prompt.md"
+      - "Read task files from /app/tasks/reviewer/. Review code in /app/workspace/ and outputs from other agents. Write review reports to /app/output/reviewer/. Update /app/status/reviewer/current.json."
 
-  # =========================================================================
-  # 5. TESTER AGENT - Test writing and execution
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 5. TESTER — Test authoring and execution
+  # ═══════════════════════════════════════════════════════════════════════════
   tester:
+    <<: *agent-defaults
     build:
       context: ./agents/tester
-      dockerfile: Dockerfile
-    container_name: claude_tester
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=tester
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the tester agent. Check /app/tasks/tester/ for task files. For each task, write and run tests in /app/workspace/, write test reports to /app/output/tester/, and update your status in /app/status/tester/current.json."
-    depends_on:
-      task-init:
-        condition: service_completed_successfully
+      <<: *agent-environment
+      CLAUDE_AGENT_ROLE: tester
+    volumes: *agent-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "--system-prompt"
+      - "/app/system-prompt.md"
+      - "Read task files from /app/tasks/tester/. Write and run tests in /app/workspace/. Write reports to /app/output/tester/. Update /app/status/tester/current.json."
 
-  # =========================================================================
-  # 6. DEPLOYER AGENT - CI/CD and deployment automation
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 6. DEPLOYER — CI/CD and deployment automation
+  # ═══════════════════════════════════════════════════════════════════════════
   deployer:
+    <<: *agent-defaults
     build:
       context: ./agents/deployer
-      dockerfile: Dockerfile
-    container_name: claude_deployer
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=deployer
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the deployer agent. Check /app/tasks/deployer/ for task files. For each task, create deployment configs in /app/workspace/, write results to /app/output/deployer/, and update your status in /app/status/deployer/current.json."
-    depends_on:
-      task-init:
-        condition: service_completed_successfully
+      <<: *agent-environment
+      CLAUDE_AGENT_ROLE: deployer
+    volumes: *agent-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "--system-prompt"
+      - "/app/system-prompt.md"
+      - "Read task files from /app/tasks/deployer/. Create deployment configs in /app/workspace/. Write results to /app/output/deployer/. Update /app/status/deployer/current.json."
 
-  # =========================================================================
-  # INIT SERVICE - Creates shared directory structure on volumes
-  # =========================================================================
-  task-init:
-    image: node:22-slim
-    volumes:
-      - shared-tasks:/app/tasks
-      - shared-status:/app/status
-      - shared-output:/app/output
-    command: >
-      sh -c "
-        mkdir -p /app/tasks/{master,researcher,coder,reviewer,tester,deployer} &&
-        mkdir -p /app/status/{master,researcher,coder,reviewer,tester,deployer} &&
-        mkdir -p /app/output/{master,researcher,coder,reviewer,tester,deployer} &&
-        echo 'Shared directories initialized'
-      "
-
-# =============================================================================
-# SHARED VOLUMES - Communication channels between agents
-# =============================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# VOLUMES — Shared communication channels between agents
+# ═══════════════════════════════════════════════════════════════════════════
 volumes:
   shared-tasks:
     driver: local
+    labels:
+      com.claude-agents.purpose: "Task assignment queue"
   shared-status:
     driver: local
+    labels:
+      com.claude-agents.purpose: "Agent status tracking"
   shared-output:
     driver: local
+    labels:
+      com.claude-agents.purpose: "Results and deliverables"
 
-# =============================================================================
-# NETWORK - Shared bridge network for agent communication
-# =============================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# NETWORK — Isolated bridge for inter-agent communication
+# ═══════════════════════════════════════════════════════════════════════════
 networks:
   agent-net:
     driver: bridge
+    labels:
+      com.claude-agents.purpose: "Agent communication network"

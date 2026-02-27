@@ -1,21 +1,38 @@
+###############################################################################
+# Deployer Agent
+#
+# CI/CD pipelines, Docker configuration, deployment automation, infrastructure.
+###############################################################################
 FROM node:22-slim
 
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+LABEL org.opencontainers.image.title="Claude Agent — Deployer"
+LABEL org.opencontainers.image.description="Deployment and infrastructure specialist agent"
 
-RUN npm install -g @anthropic-ai/claude-code
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        git curl jq ca-certificates procps; \
+    rm -rf /var/lib/apt/lists/*
+
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && \
+    npm cache clean --force
 
 WORKDIR /app
 
-RUN mkdir -p /home/node/.claude && chown -R node:node /home/node /app
+RUN mkdir -p /home/node/.claude /app/tasks /app/status /app/output /app/workspace && \
+    chown -R node:node /home/node /app
 
 COPY --chown=node:node system-prompt.md /app/system-prompt.md
 COPY --chown=node:node CLAUDE.md /app/CLAUDE.md
 
+ENV NODE_ENV=production
+ENV CLAUDE_AGENT_ROLE=deployer
+
 USER node
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD pgrep -f "claude" > /dev/null || exit 1
 
 ENTRYPOINT ["claude"]
 CMD ["--dangerously-skip-permissions"]

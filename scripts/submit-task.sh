@@ -1,50 +1,73 @@
 #!/usr/bin/env bash
 ###############################################################################
-# submit-task.sh - Submit a task to the master controller for multi-agent work
+# submit-task.sh — Submit a task to the master controller for multi-agent work
+#
+# Writes a task file to a temporary volume, then launches all agents.
+# The master controller reads the task, decomposes it, and delegates.
 #
 # Usage:
 #   ./scripts/submit-task.sh "Build a REST API with Express.js"
-#
-# This writes a task file to the shared volume, then launches the agents.
+#   ./scripts/submit-task.sh --priority low "Update the README"
 ###############################################################################
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib.sh"
 
-cd "$PROJECT_DIR"
-
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found."
-    exit 1
-fi
+# ── Parse arguments ────────────────────────────────────────────────────────
+PRIORITY="high"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --priority)
+      PRIORITY="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--priority high|medium|low] \"<task description>\""
+      echo ""
+      echo "Examples:"
+      echo "  $0 \"Build a REST API with Express.js and PostgreSQL\""
+      echo "  $0 --priority medium \"Refactor the authentication module\""
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 if [ -z "${1:-}" ]; then
-    echo "Usage: $0 \"your task description\""
-    exit 1
+  log_fatal "No task description provided. Run: $0 --help"
 fi
 
+check_docker
+check_api_key
+check_workspace
+
 TASK_DESCRIPTION="$1"
-TASK_ID="task-$(date +%Y%m%d-%H%M%S)"
+TASK_ID="task-$(date +%Y%m%d-%H%M%S)-$$"
+TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Create task directories if they don't exist
-mkdir -p ./workspace/.tasks/master
+# ── Write task file using jq for safe JSON encoding ────────────────────────
+TASK_DIR="./workspace/.tasks/master"
+mkdir -p "$TASK_DIR"
 
-# Write the incoming task file
-cat > "./workspace/.tasks/master/incoming.json" <<EOF
-{
-  "task_id": "$TASK_ID",
-  "description": "$TASK_DESCRIPTION",
-  "submitted_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "priority": "high"
-}
-EOF
+jq -n \
+  --arg id "$TASK_ID" \
+  --arg desc "$TASK_DESCRIPTION" \
+  --arg ts "$TIMESTAMP" \
+  --arg pri "$PRIORITY" \
+  '{
+    task_id: $id,
+    description: $desc,
+    submitted_at: $ts,
+    priority: $pri
+  }' > "${TASK_DIR}/incoming.json"
 
-echo "=== Task Submitted ==="
-echo "ID:   $TASK_ID"
-echo "Task: $TASK_DESCRIPTION"
+print_banner "Task Submitted"
+log_ok "ID:       ${TASK_ID}"
+log_ok "Priority: ${PRIORITY}"
+log_ok "Task:     ${TASK_DESCRIPTION}"
 echo ""
-echo "Starting agent system..."
+log_info "Starting 6-agent system..."
 echo ""
 
 docker compose up --build

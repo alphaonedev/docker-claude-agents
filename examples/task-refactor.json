@@ -1,8 +1,9 @@
 {
   "task_id": "task-example-refactor",
-  "description": "Refactor all JavaScript files in the workspace to use async/await instead of callbacks and Promises",
+  "description": "Refactor all JavaScript files in the workspace to use async/await instead of callbacks and Promises. Ensure existing tests still pass after changes.",
   "priority": "high",
-  "context": "The codebase uses a mix of callbacks, Promises, and some async/await. Standardize to async/await throughout.",
-  "expected_output": "All JS files updated with async/await patterns, existing tests still pass",
-  "dependencies": []
+  "context": "The codebase uses a mix of callbacks, Promises, and some async/await. Standardize to async/await throughout. The test suite uses Jest.",
+  "expected_output": "All JS files updated with async/await patterns, existing tests still pass, summary of files changed.",
+  "dependencies": [],
+  "timeout_minutes": 30
 }

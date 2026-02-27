@@ -1,111 +1,217 @@
-# Architecture - Docker Claude Agents
+# Architecture
 
-## Overview
+## System Overview
 
-This system runs a team of 6 Claude Code agents inside Docker containers. Each agent has a specialized role and communicates with other agents through shared Docker volumes.
+The Docker Claude Agents system runs 6 containerized Claude Code agents that collaborate on software engineering tasks. The architecture is designed around three principles:
 
-## Agent Design
+1. **Isolation** — Each agent runs in its own container with defined resource limits.
+2. **Simplicity** — Agents communicate through JSON files on shared volumes (no message broker, no database).
+3. **Observability** — Structured status files, log rotation, and health checks enable monitoring.
 
-### Master Controller
-
-The master controller is the orchestration hub. When a task is submitted:
-
-1. Reads the incoming task from `/app/tasks/master/incoming.json`
-2. Decomposes it into subtasks appropriate for each specialist
-3. Writes subtask files to `/app/tasks/{agent-name}/`
-4. Monitors `/app/status/{agent-name}/current.json` for completion
-5. Aggregates results from `/app/output/{agent-name}/`
-6. Writes the final deliverable to `/app/output/master/`
-
-### Worker Agents
-
-Each worker agent follows the same lifecycle:
-
-1. Check task directory for new task files
-2. Read and parse the JSON task file
-3. Execute the task (in workspace or analysis)
-4. Write results to output directory
-5. Update status file
-
-### Communication Protocol
-
-Agents do not communicate directly. Instead they use a file-based protocol on shared Docker volumes:
+## Agent Lifecycle
 
 ```
-shared-tasks/          shared-status/         shared-output/
-├── master/            ├── master/            ├── master/
-│   └── incoming.json  │   └── plan.json      │   └── final.md
-├── researcher/        ├── researcher/        ├── researcher/
-│   └── task-001.json  │   └── current.json   │   └── findings.md
-├── coder/             ├── coder/             ├── coder/
-│   └── task-002.json  │   └── current.json   │   └── summary.md
-├── reviewer/          ├── reviewer/          ├── reviewer/
-│   └── task-003.json  │   └── current.json   │   └── review.md
-├── tester/            ├── tester/            ├── tester/
-│   └── task-004.json  │   └── current.json   │   └── report.json
-└── deployer/          └── deployer/          └── deployer/
-    └── task-005.json      └── current.json       └── config.md
+┌──────────┐     ┌─────────┐     ┌──────────┐     ┌───────────┐     ┌──────────┐
+│  Start   │────▶│  Read   │────▶│  Update  │────▶│  Execute  │────▶│  Write   │
+│          │     │  Tasks  │     │  Status  │     │   Task    │     │  Output  │
+└──────────┘     └─────────┘     │ "working"│     └───────────┘     └──────┬───┘
+                                 └──────────┘                              │
+                                                                    ┌──────▼───┐
+                                                                    │  Update  │
+                                                                    │  Status  │
+                                                                    │"completed"│
+                                                                    └──────────┘
 ```
 
-## Docker Architecture
+Every agent — master and workers alike — follows this lifecycle:
 
-### Volumes
+1. **Start** — Container launches, Claude Code initializes.
+2. **Read tasks** — Agent reads `.json` files from its task directory.
+3. **Update status** — Writes `{"status": "working"}` to its status file.
+4. **Execute** — Performs its specialized work.
+5. **Write output** — Produces deliverables + an output manifest.
+6. **Update status** — Writes `{"status": "completed"}`.
 
-| Volume | Purpose | Access |
-|--------|---------|--------|
-| `shared-tasks` | Task assignment queue | Master writes, workers read |
-| `shared-status` | Agent status tracking | All agents write their own status |
-| `shared-output` | Results and deliverables | Workers write, master reads |
-| `./workspace` | Shared codebase | All agents read/write |
-| `./.claude` | Auth persistence | All agents (read) |
+If no tasks are found, the agent writes `{"status": "idle"}` and exits.
 
-### Network
+## Volume Architecture
 
-All agents share the `agent-net` bridge network for:
-- MCP server communication (service name resolution)
-- Database access
-- External API access (Anthropic API)
+```
+Docker Named Volumes
+─────────────────────────────────────────────────────────────
+shared-tasks/                    ← Task assignment queue
+├── master/
+│   └── incoming.json            ← User-submitted task
+├── researcher/
+│   └── task-research-001.json   ← Subtask from master
+├── coder/
+│   └── task-coder-001.json
+├── reviewer/
+│   └── task-reviewer-001.json
+├── tester/
+│   └── task-tester-001.json
+└── deployer/
+    └── task-deployer-001.json
 
-### Init Service
+shared-status/                   ← Real-time agent status
+├── init.json                    ← Written by task-init service
+├── master/
+│   ├── current.json             ← Master's current status
+│   └── plan.json                ← Execution plan
+├── researcher/
+│   └── current.json
+├── coder/
+│   └── current.json
+├── reviewer/
+│   └── current.json
+├── tester/
+│   └── current.json
+└── deployer/
+    └── current.json
 
-The `task-init` service runs first to create the directory structure on shared volumes before any agent starts. This ensures all agents have their expected directories available.
+shared-output/                   ← Results and deliverables
+├── master/
+│   └── result.md                ← Final aggregated report
+├── researcher/
+│   ├── task-research-001.md          ← Findings report
+│   └── task-research-001.manifest.json
+├── coder/
+│   ├── task-coder-001.md
+│   └── task-coder-001.manifest.json
+├── reviewer/
+│   ├── task-reviewer-001.md
+│   └── task-reviewer-001.manifest.json
+├── tester/
+│   ├── task-tester-001.md
+│   └── task-tester-001.manifest.json
+└── deployer/
+    ├── task-deployer-001.md
+    └── task-deployer-001.manifest.json
+```
 
-## Compose File Organization
+### Bind Mounts
 
-| File | Purpose |
-|------|---------|
-| `docker-compose.yml` | Core 6-agent system |
-| `docker-compose.chat.yml` | Single interactive agent |
-| `docker-compose.cowork.yml` | Lead + reviewer pair |
-| `docker-compose.mcp.yml` | MCP service overlay (use with `-f` flag) |
+| Host Path | Container Path | Purpose |
+|-----------|---------------|---------|
+| `./workspace` | `/app/workspace` | Shared codebase (read/write for workers) |
+| `./.claude` | `/home/node/.claude` | Auth persistence (read-only) |
 
-## Customization
+## Network Topology
 
-### Adding a New Agent
+```
+                    ┌─────────────────────────────────────┐
+                    │          agent-net (bridge)          │
+                    │                                     │
+                    │  ┌────────┐  ┌────────┐  ┌──────┐  │
+                    │  │ master │  │ coder  │  │ ...  │  │
+                    │  └───┬────┘  └───┬────┘  └──┬───┘  │
+                    │      │           │          │      │
+                    │  ┌───▼───────────▼──────────▼───┐  │
+                    │  │     Docker DNS resolution     │  │
+                    │  └──────────────┬────────────────┘  │
+                    │                 │                    │
+                    │  ┌──────────────▼────────────────┐  │
+                    │  │  MCP servers (when enabled)   │  │
+                    │  │  mcp-github, mcp-postgres...  │  │
+                    │  └──────────────────────────────┘  │
+                    │                                     │
+                    └──────────────────┬──────────────────┘
+                                       │ outbound
+                                       ▼
+                              Anthropic API
+                              api.anthropic.com
+```
 
-1. Create `agents/your-agent/Dockerfile` (copy from existing agent)
-2. Create `agents/your-agent/system-prompt.md` with role description
-3. Create `agents/your-agent/CLAUDE.md` with workflow instructions
-4. Add the service to `docker-compose.yml`
-5. Add the agent's directories to the `task-init` service
+All services share the `agent-net` bridge network. Docker's built-in DNS allows agents to resolve MCP service names (e.g., `mcp-github`, `db-service`).
 
-### Custom MCP Servers
+## Compose File Strategy
 
-Add entries to `docker-compose.mcp.yml`:
+| File | Scope | Usage |
+|------|-------|-------|
+| `docker-compose.yml` | Core 6-agent system | `docker compose up` |
+| `docker-compose.chat.yml` | Single interactive agent | `docker compose -f docker-compose.chat.yml run --rm claude-chat` |
+| `docker-compose.cowork.yml` | Lead + reviewer pair | `docker compose -f docker-compose.cowork.yml up` |
+| `docker-compose.mcp.yml` | MCP overlay (extends core) | `docker compose -f docker-compose.yml -f docker-compose.mcp.yml up` |
 
+The core `docker-compose.yml` uses YAML anchors (`x-agent-defaults`, `x-agent-environment`, `x-agent-volumes`) to define shared configuration once and reference it across all 6 agent services.
+
+## Init Service
+
+The `task-init` service is a lightweight Alpine container that runs before any agent starts. It creates the directory structure on the shared volumes:
+
+```
+task-init → creates dirs → exits → agents start
+```
+
+All agent services use `depends_on: task-init: condition: service_completed_successfully` to ensure directories exist before agents attempt to read/write.
+
+## Customization Guide
+
+### Adding a new agent
+
+1. Create the agent directory:
+   ```
+   agents/your-agent/
+   ├── Dockerfile        # Copy from an existing agent, change labels
+   ├── system-prompt.md  # Define role, workflow, error handling
+   └── CLAUDE.md         # Concise project instructions
+   ```
+
+2. Add to `docker-compose.yml`:
+   ```yaml
+   your-agent:
+     <<: *agent-defaults
+     build:
+       context: ./agents/your-agent
+       args:
+         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+     environment:
+       <<: *agent-environment
+       CLAUDE_AGENT_ROLE: your-agent
+     volumes: *agent-volumes
+     command:
+       - "--dangerously-skip-permissions"
+       - "--system-prompt"
+       - "/app/system-prompt.md"
+       - "Your agent's initial prompt here."
+   ```
+
+3. Add to the `task-init` command's agent list.
+
+4. Update the master controller's `system-prompt.md` to include the new agent in its team table.
+
+### Modifying resource limits
+
+Override the YAML anchor defaults per-service:
+```yaml
+coder:
+  <<: *agent-defaults
+  deploy:
+    resources:
+      limits:
+        cpus: "4"
+        memory: 8G
+```
+
+### Adding custom MCP servers
+
+Add to `docker-compose.mcp.yml`:
 ```yaml
 mcp-your-tool:
-  image: mcp/your-tool-server:latest
+  image: your-org/your-mcp-server:1.0.0
   environment:
-    - YOUR_ENV_VAR=${YOUR_ENV_VAR}
+    YOUR_API_KEY: ${YOUR_API_KEY}
   networks:
     - agent-net
+  restart: on-failure:3
 ```
 
-### Modifying Agent Behavior
+## Design Trade-offs
 
-Each agent's behavior is controlled by two files:
-- `system-prompt.md` - Detailed role description and protocols
-- `CLAUDE.md` - Claude Code project instructions (loaded automatically)
-
-Edit these files to change how agents operate.
+| Decision | Benefit | Limitation |
+|----------|---------|------------|
+| File-based IPC | Simple, debuggable, no infra deps | No real-time messaging; polling-based |
+| All agents same image base | Consistent environment | Larger image size per agent |
+| Single Docker host | Simple deployment | Not horizontally scalable |
+| Named volumes | Persist across restarts | Must be explicitly cleaned up |
+| `--dangerously-skip-permissions` | Fully autonomous | No guardrails on agent actions |

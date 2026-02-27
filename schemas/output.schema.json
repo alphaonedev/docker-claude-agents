@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alphaonedev/docker-claude-agents/schemas/output.schema.json",
+  "title": "Agent Output Manifest",
+  "description": "Schema for the output manifest that each agent writes alongside its deliverables.",
+  "type": "object",
+  "required": ["task_id", "agent", "status", "timestamp"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "The task ID this output corresponds to"
+    },
+    "agent": {
+      "type": "string",
+      "enum": ["master", "researcher", "coder", "reviewer", "tester", "deployer"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "partial", "failed"],
+      "description": "Outcome of the task"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief human-readable summary of what was accomplished"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative path to the output file"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["report", "code", "test_results", "config", "documentation", "review"],
+            "description": "Category of the artifact"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "List of files produced by this agent"
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "duration_seconds": { "type": "number" },
+        "files_created": { "type": "integer" },
+        "files_modified": { "type": "integer" },
+        "tests_passed": { "type": "integer" },
+        "tests_failed": { "type": "integer" },
+        "issues_found": { "type": "integer" }
+      },
+      "description": "Quantitative metrics about the work performed"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

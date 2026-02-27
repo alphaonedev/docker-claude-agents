@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 ###############################################################################
-# start-cowork.sh - Launch lead + reviewer pair programming agents
+# start-cowork.sh — Launch lead + reviewer pair programming agents
+#
+# Usage:
+#   ./scripts/start-cowork.sh
+#   ./scripts/start-cowork.sh -d    # detached
 ###############################################################################
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib.sh"
 
-cd "$PROJECT_DIR"
+check_docker
+check_api_key
+check_workspace
 
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found. Copy .env.example to .env and set your API key."
-    exit 1
-fi
+print_banner "Cowork Mode (Pair Programming)"
 
-echo "=== Docker Claude Agents - Cowork Mode ==="
-echo ""
-echo "Agents:"
-echo "  1. Lead Agent (implements)"
-echo "  2. Review Agent (reviews)"
+log_info "Lead Agent    — plans and implements"
+log_info "Review Agent  — reviews and validates"
 echo ""
 
 docker compose -f docker-compose.cowork.yml up --build "$@"

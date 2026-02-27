@@ -1,23 +1,33 @@
-# Environment variables (contains secrets)
+# ── Secrets ─────────────────────────────────────────────────────────────────
 .env
+.env.local
+.env.*.local
 
-# Claude auth/config (contains tokens)
+# ── Claude auth/config (contains tokens) ──────────────────────────────────
 .claude/
 
-# Workspace files (user-specific)
+# ── Workspace (user-specific project files) ────────────────────────────────
 workspace/*
 !workspace/.gitkeep
 
-# Docker volumes
+# ── Docker ─────────────────────────────────────────────────────────────────
 db-data/
 
-# OS files
+# ── OS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+*~
 
-# Node
-node_modules/
-
-# IDE
+# ── Editors ────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# ── Node ───────────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Logs ───────────────────────────────────────────────────────────────────
+*.log
+logs/
+tmp/

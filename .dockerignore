@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.claude/
+*.md
+!agents/*/CLAUDE.md
+docs/
+examples/
+scripts/
+workspace/
+LICENSE
+.gitignore
+.dockerignore
+docker-compose*.yml
+Makefile

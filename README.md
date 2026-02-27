@@ -1,296 +1,274 @@
 # Docker Claude Agents
 
-A repeatable, Docker-based multi-agent system powered by [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Run a team of 6 autonomous Claude agents (1 master controller + 5 specialists) that collaborate on software engineering tasks.
+A production-grade, Docker-based reference architecture for running a coordinated team of 6 autonomous [Claude Code](https://docs.anthropic.com/en/docs/claude-code) agents. One master controller orchestrates five specialist workers — researcher, coder, reviewer, tester, and deployer — that communicate through shared volumes using a structured JSON protocol.
 
 ## Architecture
 
 ```
-                    +---------------------+
-                    |  Master Controller  |
-                    |   (Orchestrator)    |
-                    +----------+----------+
-                               |
-          +--------------------+--------------------+
-          |          |         |         |          |
-    +-----+----+ +--+---+ +---+----+ +--+---+ +----+-----+
-    |Researcher| | Coder| |Reviewer| |Tester| | Deployer |
-    +----------+ +------+ +--------+ +------+ +----------+
-          |          |         |         |          |
-          +----------+---------+---------+----------+
-                               |
-                    +----------+----------+
-                    |   Shared Volumes    |
-                    |  tasks/status/output |
-                    +---------------------+
+                         ┌─────────────────────┐
+                         │  Master Controller   │
+                         │    (orchestrator)    │
+                         └──────────┬──────────┘
+                                    │ decomposes & delegates
+            ┌───────────┬───────────┼───────────┬───────────┐
+            │           │           │           │           │
+       ┌────▼───┐  ┌────▼───┐  ┌───▼────┐  ┌───▼──┐  ┌────▼────┐
+       │Research│  │ Coder  │  │Reviewer│  │Tester│  │Deployer │
+       └────┬───┘  └────┬───┘  └───┬────┘  └───┬──┘  └────┬────┘
+            │           │          │            │           │
+            └───────────┴──────────┴────────────┴───────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │   Shared Docker Volumes      │
+                    │  tasks/ · status/ · output/  │
+                    └──────────────────────────────┘
 ```
-
-**Agent Roles:**
 
 | Agent | Role |
 |-------|------|
-| **Master Controller** | Decomposes tasks, delegates to workers, aggregates results |
-| **Researcher** | Gathers information, analyzes code, writes documentation |
-| **Coder** | Implements features, fixes bugs, refactors code |
-| **Reviewer** | Code review, security audits, best practice enforcement |
-| **Tester** | Writes and runs tests, validates functionality |
-| **Deployer** | CI/CD, Docker configs, deployment automation |
+| **Master Controller** | Decomposes incoming tasks, delegates to specialists, monitors progress, aggregates results |
+| **Researcher** | Codebase analysis, architecture mapping, documentation, technical findings |
+| **Coder** | Feature implementation, bug fixes, refactoring, code generation |
+| **Reviewer** | Code review, OWASP security audit, best-practice enforcement |
+| **Tester** | Test authoring, test execution, coverage analysis, regression detection |
+| **Deployer** | Dockerfiles, CI/CD pipelines, deployment scripts, infrastructure config |
+
+## Prerequisites
+
+- Docker Engine >= 24.0
+- Docker Compose >= 2.20
+- An [Anthropic API key](https://console.anthropic.com/settings/keys)
 
 ## Quick Start
 
-### 1. Clone and Configure
-
 ```bash
-git clone https://github.com/YOUR_USERNAME/docker-claude-agents.git
+# 1. Clone
+git clone https://github.com/alphaonedev/docker-claude-agents.git
 cd docker-claude-agents
-cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+
+# 2. Configure
+make setup                         # creates .env from template
+# Edit .env → set ANTHROPIC_API_KEY
+
+# 3. Run
+make team                          # full 6-agent system
+# — or —
+make chat                          # single interactive agent
+make run PROMPT="Refactor to async/await"  # one-shot autonomous task
 ```
 
-### 2. Run a Single Agent (Chat Mode)
+## Running Modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Full Team** | `make team` | All 6 agents collaborating on a complex task |
+| **Chat** | `make chat` | Single interactive agent for ad-hoc work |
+| **Single Task** | `make run PROMPT="..."` | One-off autonomous task, no interaction |
+| **Submit Task** | `make task PROMPT="..."` | Submit to master controller for team decomposition |
+| **Cowork** | `make cowork` | Lead + reviewer pair programming |
+| **With MCP** | `make mcp` | Full team + GitHub, Search, DB tool servers |
+
+### Direct Docker usage
 
 ```bash
-# Interactive session
-./scripts/start-chat.sh
+# Interactive single agent
+docker compose -f docker-compose.chat.yml run --rm claude-chat
 
 # One-off autonomous task
-./scripts/run-single-task.sh "Refactor all files to use async/await"
-```
+docker run -it \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  -v $(pwd)/workspace:/app \
+  claude-agent-base --dangerously-skip-permissions \
+  "Refactor the files in this directory to use async/await"
 
-### 3. Run the Full 6-Agent System
+# Full team
+docker compose up --build
 
-```bash
-# Submit a task to the master controller
-./scripts/submit-task.sh "Build a REST API with Express.js and PostgreSQL"
-
-# Or launch all agents directly
-./scripts/start-all.sh
-```
-
-### 4. Run in Cowork Mode (Pair Programming)
-
-```bash
-./scripts/start-cowork.sh
-```
-
-### 5. Run with MCP Services (GitHub, Search, Database)
-
-```bash
-# Set GITHUB_TOKEN and BRAVE_API_KEY in .env first
-./scripts/start-with-mcp.sh
+# With MCP services
+docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build
 ```
 
 ## Project Structure
 
 ```
 docker-claude-agents/
-├── README.md
-├── .env.example              # Environment variable template
-├── .gitignore
-├── Dockerfile.base           # Base image for single-agent use
-├── docker-compose.yml        # Full 6-agent orchestration
-├── docker-compose.chat.yml   # Interactive single-agent mode
-├── docker-compose.cowork.yml # Lead + Reviewer pair mode
-├── docker-compose.mcp.yml    # MCP services overlay
-├── mcp-config.json           # MCP server configuration
-├── agents/
-│   ├── master-controller/    # Orchestrator agent
-│   │   ├── Dockerfile
-│   │   ├── CLAUDE.md
-│   │   └── system-prompt.md
-│   ├── researcher/           # Research & analysis agent
-│   │   ├── Dockerfile
-│   │   ├── CLAUDE.md
-│   │   └── system-prompt.md
-│   ├── coder/                # Implementation agent
-│   │   ├── Dockerfile
-│   │   ├── CLAUDE.md
-│   │   └── system-prompt.md
-│   ├── reviewer/             # Code review agent
-│   │   ├── Dockerfile
-│   │   ├── CLAUDE.md
-│   │   └── system-prompt.md
-│   ├── tester/               # Testing agent
-│   │   ├── Dockerfile
-│   │   ├── CLAUDE.md
-│   │   └── system-prompt.md
-│   └── deployer/             # Deployment agent
-│       ├── Dockerfile
-│       ├── CLAUDE.md
-│       └── system-prompt.md
-├── scripts/
-│   ├── start-all.sh          # Launch all 6 agents
-│   ├── start-chat.sh         # Interactive single agent
-│   ├── start-cowork.sh       # Pair programming mode
-│   ├── start-with-mcp.sh     # Agents + MCP services
-│   ├── run-single-task.sh    # One-off autonomous task
-│   ├── submit-task.sh        # Submit task to master
-│   └── cleanup.sh            # Stop everything, remove volumes
-├── examples/
-│   ├── task-refactor.json    # Example: code refactoring task
-│   ├── task-api-build.json   # Example: build an API task
-│   └── task-security-audit.json # Example: security audit task
-├── workspace/                # Shared codebase (mount your code here)
-└── docs/
-    └── ARCHITECTURE.md       # Detailed architecture docs
+├── Makefile                     # All common operations
+├── Dockerfile.base              # Base image for single-agent use
+├── docker-compose.yml           # Full 6-agent orchestration
+├── docker-compose.chat.yml      # Interactive single-agent mode
+├── docker-compose.cowork.yml    # Lead + reviewer pair mode
+├── docker-compose.mcp.yml       # MCP services overlay
+├── .env.example                 # Environment variable template
+├── .dockerignore                # Docker build exclusions
+├── mcp-config.json              # MCP server configuration
+│
+├── agents/                      # One directory per agent role
+│   ├── master-controller/
+│   │   ├── Dockerfile           # Agent-specific image
+│   │   ├── system-prompt.md     # Detailed role + protocol
+│   │   └── CLAUDE.md            # Claude Code project instructions
+│   ├── researcher/
+│   ├── coder/
+│   ├── reviewer/
+│   ├── tester/
+│   └── deployer/
+│
+├── schemas/                     # JSON Schema contracts
+│   ├── task.schema.json         # Task file format
+│   ├── status.schema.json       # Status file format
+│   └── output.schema.json       # Output manifest format
+│
+├── scripts/                     # Operational scripts
+│   ├── lib.sh                   # Shared functions (validation, logging)
+│   ├── start-all.sh             # Launch full team
+│   ├── start-chat.sh            # Interactive mode
+│   ├── start-cowork.sh          # Pair programming
+│   ├── start-with-mcp.sh        # Team + MCP services
+│   ├── run-single-task.sh       # One-off task
+│   ├── submit-task.sh           # Submit to master controller
+│   └── cleanup.sh               # Stop + cleanup
+│
+├── examples/                    # Example task files
+│   ├── task-refactor.json
+│   ├── task-api-build.json
+│   └── task-security-audit.json
+│
+├── docs/
+│   ├── ARCHITECTURE.md          # System design deep-dive
+│   ├── SECURITY.md              # Security considerations
+│   └── TROUBLESHOOTING.md       # Common issues and fixes
+│
+└── workspace/                   # Mount your code here
 ```
 
-## Running Modes
+## Agent Communication Protocol
 
-### Chat Mode (Interactive)
+Agents communicate exclusively through files on three shared Docker volumes:
 
-Run a single Claude agent interactively for ad-hoc tasks:
+| Volume | Purpose | Writer | Reader |
+|--------|---------|--------|--------|
+| `shared-tasks` | Task assignment queue | Master | Workers |
+| `shared-status` | Agent progress tracking | Each agent (own status) | Master |
+| `shared-output` | Results and deliverables | Workers | Master |
 
-```bash
-docker compose -f docker-compose.chat.yml run --rm claude-chat
-```
+Each volume contains per-agent subdirectories: `master/`, `researcher/`, `coder/`, `reviewer/`, `tester/`, `deployer/`.
 
-### Single Task (Autonomous)
+### Contracts
 
-Run a one-off task without interaction:
+All JSON files conform to schemas in `schemas/`:
 
-```bash
-docker run -it \
-  -e ANTHROPIC_API_KEY="your_api_key_here" \
-  -v ~/.claude:/home/node/.claude \
-  -v $(pwd)/workspace:/app \
-  custom-claude-agent --dangerously-skip-permissions \
-  "Refactor the files in this directory to use async/await"
-```
-
-Without a mounted volume (ephemeral):
-
-```bash
-docker run -e ANTHROPIC_API_KEY="your_key" custom-claude-agent \
-  sh -c "yes | claude --dangerously-skip-permissions"
-```
-
-### Full Team (6 Agents)
-
-Launch all agents to collaborate on complex tasks:
-
-```bash
-docker compose up --build
-```
-
-Or run a specific one-off command:
-
-```bash
-docker compose run --rm coder --dangerously-skip-permissions "your prompt here"
-```
-
-### Cowork Mode (Pair Programming)
-
-Two agents collaborate: one implements, one reviews:
-
-```bash
-docker compose -f docker-compose.cowork.yml up --build
-```
-
-### With MCP Services
-
-Add GitHub, Brave Search, Filesystem, and PostgreSQL MCP servers:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build
-```
-
-## Agent Communication
-
-Agents communicate through shared Docker volumes:
-
-| Volume | Purpose |
-|--------|---------|
-| `shared-tasks` | Task assignment files (JSON) |
-| `shared-status` | Agent status updates |
-| `shared-output` | Results and deliverables |
-
-### Task File Format
-
+**Task** (`schemas/task.schema.json`):
 ```json
 {
-  "task_id": "unique-id",
+  "task_id": "task-coder-001",
+  "description": "Implement JWT authentication middleware",
   "priority": "high",
-  "description": "What needs to be done",
-  "context": "Background information",
-  "expected_output": "What the result should look like",
-  "dependencies": ["other-task-id"]
+  "dependencies": [],
+  "timeout_minutes": 30
 }
 ```
 
-### Status File Format
-
+**Status** (`schemas/status.schema.json`):
 ```json
 {
   "agent": "coder",
   "status": "working",
-  "current_task": "task-123",
-  "timestamp": "2026-02-27T10:00:00Z"
+  "current_task": "task-coder-001",
+  "progress_pct": 60,
+  "timestamp": "2026-02-27T14:30:00Z"
+}
+```
+
+**Output manifest** (`schemas/output.schema.json`):
+```json
+{
+  "task_id": "task-coder-001",
+  "agent": "coder",
+  "status": "success",
+  "summary": "Implemented JWT middleware with token validation",
+  "artifacts": [{"path": "task-coder-001.md", "type": "code"}],
+  "metrics": {"files_created": 1, "files_modified": 2}
 }
 ```
 
 ## Network Access
 
-Docker containers use bridge networking by default, allowing agents to reach the Anthropic API.
+All containers share an isolated `agent-net` bridge network with outbound access for the Anthropic API.
 
-**For host machine services:**
+**Accessing host services:**
 - **Linux:** `--network="host"`
-- **Mac/Windows:** Use `host.docker.internal` to reference host services
-
-```bash
-docker run --network="host" \
-  -e ANTHROPIC_API_KEY="your_key" \
-  custom-claude-agent --dangerously-skip-permissions "your prompt"
-```
+- **Mac/Windows:** Use `host.docker.internal` as hostname
 
 ## MCP Server Integration
 
-Connect agents to external tools via MCP (Model Context Protocol):
+The `docker-compose.mcp.yml` overlay adds [Model Context Protocol](https://modelcontextprotocol.io/) tool servers:
 
-| MCP Server | Purpose |
-|------------|---------|
-| GitHub | Repository access, issues, PRs |
-| Filesystem | Structured file operations |
-| Brave Search | Web search capabilities |
-| PostgreSQL | Database queries and management |
+| Server | Purpose | Required env var |
+|--------|---------|------------------|
+| GitHub | Repos, issues, PRs | `GITHUB_TOKEN` |
+| Filesystem | Structured file I/O | — |
+| Brave Search | Web search | `BRAVE_API_KEY` |
+| PostgreSQL | Database access | `POSTGRES_PASSWORD` |
 
-Add custom MCP servers in `docker-compose.mcp.yml`:
-
-```yaml
-mcp-custom:
-  image: mcp/your-server:latest
-  environment:
-    - YOUR_API_KEY=${YOUR_API_KEY}
-  networks:
-    - agent-net
-```
-
-Browse available MCP servers: [https://code.claude.com/docs/en/mcp](https://code.claude.com/docs/en/mcp)
-
-## Key Implementation Details
-
-- **Authentication Persistence**: Mounting `.claude` to `/home/node/.claude` keeps agents logged in across container restarts
-- **Unattended Operation**: `--dangerously-skip-permissions` is required for autonomous operation; without it, containers hang waiting for user confirmation
-- **Service Discovery**: Agents communicate with MCP servers using Docker service names on the shared `agent-net` bridge network
-- **All agents run autonomously** with no human-in-the-loop by default
+Add custom MCP servers by extending `docker-compose.mcp.yml`.
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
-| `GITHUB_TOKEN` | No | GitHub PAT (for GitHub MCP) |
-| `BRAVE_API_KEY` | No | Brave Search API key |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | — | Anthropic API key |
+| `CLAUDE_CODE_VERSION` | No | `latest` | Pin Claude Code CLI version |
+| `GITHUB_TOKEN` | MCP only | — | GitHub Personal Access Token |
+| `BRAVE_API_KEY` | MCP only | — | Brave Search API key |
+| `POSTGRES_USER` | MCP only | `claude_agent` | Database user |
+| `POSTGRES_PASSWORD` | MCP only | — | Database password |
+| `POSTGRES_DB` | MCP only | `agentdb` | Database name |
+
+## Key Design Decisions
+
+- **File-based IPC** — Agents communicate via JSON files on shared volumes, not network calls. This is simple, debuggable, and requires no additional infrastructure.
+- **Autonomous execution** — All agents run with `--dangerously-skip-permissions` for fully unattended operation.
+- **Auth persistence** — `.claude/` is mounted read-only to avoid re-authentication across restarts.
+- **YAML anchors** — `docker-compose.yml` uses `x-agent-defaults` to eliminate repetition across 6 services.
+- **Resource limits** — Every service has CPU/memory limits and log rotation to prevent resource exhaustion.
+- **Init service** — A lightweight Alpine container creates the directory structure on shared volumes before agents start.
+
+## Customization
+
+### Adding a new agent
+
+1. Create `agents/your-agent/{Dockerfile,system-prompt.md,CLAUDE.md}`
+2. Add the service to `docker-compose.yml` (copy an existing agent block)
+3. Add the agent name to the `task-init` service's directory loop
+4. Update the master controller's system prompt to know about the new agent
+
+### Modifying agent behavior
+
+Each agent's behavior is defined by two files:
+- `system-prompt.md` — Detailed role, workflow, error handling, constraints
+- `CLAUDE.md` — Concise project-level instructions loaded by Claude Code
+
+## Monitoring
+
+```bash
+make logs      # tail all agent logs
+make status    # container status table
+make health    # health check summary
+```
 
 ## Cleanup
 
 ```bash
-# Stop all agents and remove volumes
-./scripts/cleanup.sh
-
-# Or manually
-docker compose down --remove-orphans
-docker volume prune
+make stop      # stop containers (keep volumes + images)
+make clean     # stop + remove volumes
+make purge     # stop + remove volumes + images
 ```
+
+## Further Reading
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System design, volume layout, communication protocol
+- [docs/SECURITY.md](docs/SECURITY.md) — Security model, secret management, threat considerations
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Common issues and solutions
 
 ## License
 

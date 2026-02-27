@@ -1,37 +1,27 @@
 #!/usr/bin/env bash
 ###############################################################################
-# start-all.sh - Launch the full 6-agent system
+# start-all.sh — Launch the full 6-agent team
+#
+# Usage:
+#   ./scripts/start-all.sh              # foreground with logs
+#   ./scripts/start-all.sh -d           # detached
+#   ./scripts/start-all.sh --no-build   # skip image rebuild
 ###############################################################################
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib.sh"
 
-cd "$PROJECT_DIR"
+check_docker
+check_api_key
+check_workspace
 
-# Check for .env
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found. Copy .env.example to .env and set your API key."
-    echo "  cp .env.example .env"
-    exit 1
-fi
+print_banner "Full Team (6 Agents)"
 
-# Check for API key
-source .env
-if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ "$ANTHROPIC_API_KEY" = "your_anthropic_api_key_here" ]; then
-    echo "ERROR: ANTHROPIC_API_KEY not set in .env"
-    exit 1
-fi
-
-echo "=== Docker Claude Agents - Starting 6-Agent System ==="
-echo ""
-echo "Agents:"
-echo "  1. Master Controller (orchestrator)"
-echo "  2. Researcher (information gathering)"
-echo "  3. Coder (implementation)"
-echo "  4. Reviewer (code review)"
-echo "  5. Tester (testing)"
-echo "  6. Deployer (deployment)"
+log_info "Master Controller  — orchestrator"
+log_info "Researcher         — information gathering"
+log_info "Coder              — implementation"
+log_info "Reviewer           — code review & security"
+log_info "Tester             — test authoring & execution"
+log_info "Deployer           — CI/CD & infrastructure"
 echo ""
 
 docker compose up --build "$@"

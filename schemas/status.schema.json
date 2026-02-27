@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alphaonedev/docker-claude-agents/schemas/status.schema.json",
+  "title": "Agent Status",
+  "description": "Schema for agent status files written to /app/status/{agent}/current.json.",
+  "type": "object",
+  "required": ["agent", "status", "timestamp"],
+  "properties": {
+    "agent": {
+      "type": "string",
+      "enum": ["master", "researcher", "coder", "reviewer", "tester", "deployer"],
+      "description": "Agent role identifier"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["idle", "working", "completed", "error", "timeout"],
+      "description": "Current agent state"
+    },
+    "current_task": {
+      "type": ["string", "null"],
+      "description": "Task ID currently being processed, or null if idle"
+    },
+    "last_completed": {
+      "type": ["string", "null"],
+      "description": "Task ID of the most recently completed task"
+    },
+    "progress_pct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Estimated completion percentage for the current task"
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable status message or error description"
+    },
+    "files_modified": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of file paths modified during this task (coder, deployer)"
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "recoverable": { "type": "boolean" }
+      },
+      "description": "Error details when status is 'error'"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the last status update"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the agent started working on the current task"
+    }
+  },
+  "additionalProperties": false
+}

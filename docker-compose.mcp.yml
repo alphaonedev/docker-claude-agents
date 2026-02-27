@@ -1,85 +1,139 @@
 ###############################################################################
-# Docker Claude Agents - Extended with MCP Services
+# Docker Claude Agents — MCP Services Overlay
+#
+# Extends the base compose with Model Context Protocol tool servers.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build
 #
-# This overlay adds MCP (Model Context Protocol) servers that agents can
-# connect to for enhanced capabilities: GitHub, filesystem, search, database.
-#
-# Prerequisites:
-#   - Set ANTHROPIC_API_KEY in .env
-#   - Set GITHUB_TOKEN in .env (for GitHub MCP)
-#   - Set BRAVE_API_KEY in .env (for Brave Search MCP)
+# Prerequisites (set in .env):
+#   - GITHUB_TOKEN         — GitHub Personal Access Token
+#   - BRAVE_API_KEY        — Brave Search API key
+#   - POSTGRES_USER        — Database user       (default: claude_agent)
+#   - POSTGRES_PASSWORD    — Database password    (required, no default)
+#   - POSTGRES_DB          — Database name        (default: agentdb)
 ###############################################################################
 
 services:
-  # =========================================================================
-  # MCP SERVERS - Tool servers that agents can connect to
-  # =========================================================================
 
-  # GitHub MCP - Provides GitHub API access to agents
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MCP TOOL SERVERS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ── GitHub MCP — Repository, issue, and PR access ─────────────────────────
   mcp-github:
     image: mcp/github-server:latest
-    container_name: mcp_github
     environment:
-      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_TOKEN}
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN:?GITHUB_TOKEN is required for GitHub MCP}
     networks:
       - agent-net
+    restart: on-failure:3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
-  # Filesystem MCP - Provides structured file access
+  # ── Filesystem MCP — Structured file operations ───────────────────────────
   mcp-filesystem:
     image: mcp/filesystem-server:latest
-    container_name: mcp_filesystem
     volumes:
       - ./workspace:/app/workspace
     command: ["/app/workspace"]
     networks:
       - agent-net
+    restart: on-failure:3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
-  # Brave Search MCP - Provides web search capabilities
+  # ── Brave Search MCP — Web search capabilities ───────────────────────────
   mcp-search:
     image: mcp/brave-search-server:latest
-    container_name: mcp_search
     environment:
-      - BRAVE_API_KEY=${BRAVE_API_KEY}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:?BRAVE_API_KEY is required for search MCP}
     networks:
       - agent-net
+    restart: on-failure:3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
-  # PostgreSQL MCP - Provides database access
+  # ── PostgreSQL MCP — Database query access ────────────────────────────────
   mcp-postgres:
     image: mcp/postgres-server:latest
-    container_name: mcp_postgres
     environment:
-      - DATABASE_URL=postgres://user:pass@db-service:5432/mydb
+      DATABASE_URL: "postgres://${POSTGRES_USER:-claude_agent}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db-service:5432/${POSTGRES_DB:-agentdb}"
     networks:
       - agent-net
+    restart: on-failure:3
     depends_on:
       db-service:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
   # BACKING SERVICES
-  # =========================================================================
+  # ═══════════════════════════════════════════════════════════════════════════
 
-  # PostgreSQL database for agents to work with
   db-service:
     image: postgres:15-alpine
-    container_name: claude_db
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: pass
-      POSTGRES_DB: mydb
+      POSTGRES_USER: ${POSTGRES_USER:-claude_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-agentdb}
     networks:
       - agent-net
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d mydb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-claude_agent} -d ${POSTGRES_DB:-agentdb}"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
     volumes:
       - db-data:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
 
 volumes:
   db-data:
     driver: local
+    labels:
+      com.claude-agents.purpose: "PostgreSQL persistent storage"

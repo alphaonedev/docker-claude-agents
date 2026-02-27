@@ -1,78 +1,89 @@
 ###############################################################################
-# Docker Claude Agents - Cowork Mode (Pair Programming)
+# Docker Claude Agents — Cowork Mode (Pair Programming)
+#
+# Two-agent collaboration: a Lead implements, a Reviewer validates.
 #
 # Usage:
 #   docker compose -f docker-compose.cowork.yml up --build
-#
-# Launches two agents that collaborate on the same workspace:
-# - A "lead" agent that plans and implements
-# - A "reviewer" agent that reviews and suggests improvements
-#
-# They communicate through shared task/status volumes.
 ###############################################################################
 
+x-cowork-defaults: &cowork-defaults
+  restart: on-failure:3
+  networks:
+    - agent-net
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: "2"
+        memory: 4G
+      reservations:
+        cpus: "0.5"
+        memory: 512M
+  depends_on:
+    cowork-init:
+      condition: service_completed_successfully
+
+x-cowork-environment: &cowork-environment
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required — see .env.example}
+
+x-cowork-volumes: &cowork-volumes
+  - ./.claude:/home/node/.claude:ro
+  - ./workspace:/app/workspace
+  - cowork-tasks:/app/tasks
+  - cowork-status:/app/status
+  - cowork-output:/app/output
+
 services:
-  # Lead agent - plans and implements
+
+  # ── Init service ──────────────────────────────────────────────────────────
+  cowork-init:
+    image: alpine:3.19
+    volumes:
+      - cowork-tasks:/app/tasks
+      - cowork-status:/app/status
+      - cowork-output:/app/output
+    entrypoint: ["/bin/sh", "-euxc"]
+    command:
+      - |
+        for agent in lead reviewer; do
+          mkdir -p "/app/tasks/$${agent}" "/app/status/$${agent}" "/app/output/$${agent}"
+        done
+        echo "[init] Cowork volumes ready"
+
+  # ── Lead Agent — Plans and implements ─────────────────────────────────────
   lead-agent:
+    <<: *cowork-defaults
     build:
       context: ./agents/coder
-      dockerfile: Dockerfile
-    container_name: claude_lead
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=lead
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - cowork-tasks:/app/tasks
-      - cowork-status:/app/status
-      - cowork-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the lead developer. Read the task from /app/tasks/lead/incoming.json. Implement the solution in /app/workspace/. When done, write a summary to /app/output/lead/summary.md and set your status to completed in /app/status/lead/current.json."
-    depends_on:
-      cowork-init:
-        condition: service_completed_successfully
+      <<: *cowork-environment
+      CLAUDE_AGENT_ROLE: lead
+    volumes: *cowork-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "Read the task from /app/tasks/lead/incoming.json. Implement the solution in /app/workspace/. Write a summary to /app/output/lead/summary.md. Write {\"status\":\"completed\"} to /app/status/lead/current.json when finished."
 
-  # Review agent - reviews and improves
+  # ── Review Agent — Reviews and validates ──────────────────────────────────
   review-agent:
+    <<: *cowork-defaults
     build:
       context: ./agents/reviewer
-      dockerfile: Dockerfile
-    container_name: claude_review
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CLAUDE_AGENT_ROLE=reviewer
-    volumes:
-      - ./.claude:/home/node/.claude
-      - ./workspace:/app/workspace
-      - cowork-tasks:/app/tasks
-      - cowork-status:/app/status
-      - cowork-output:/app/output
-    networks:
-      - agent-net
-    command: >
-      --dangerously-skip-permissions
-      "You are the code reviewer. Wait for the lead agent to complete by checking /app/status/lead/current.json. Once complete, review the code in /app/workspace/ and the summary in /app/output/lead/summary.md. Write your review to /app/output/reviewer/review.md."
-    depends_on:
-      cowork-init:
-        condition: service_completed_successfully
-
-  cowork-init:
-    image: node:22-slim
-    volumes:
-      - cowork-tasks:/app/tasks
-      - cowork-status:/app/status
-      - cowork-output:/app/output
-    command: >
-      sh -c "
-        mkdir -p /app/tasks/{lead,reviewer} &&
-        mkdir -p /app/status/{lead,reviewer} &&
-        mkdir -p /app/output/{lead,reviewer} &&
-        echo 'Cowork directories initialized'
-      "
+      <<: *cowork-environment
+      CLAUDE_AGENT_ROLE: reviewer
+    volumes: *cowork-volumes
+    command:
+      - "--dangerously-skip-permissions"
+      - "Poll /app/status/lead/current.json until the lead agent status is 'completed' (check every 10 seconds, timeout after 10 minutes). Then review code in /app/workspace/ and the summary at /app/output/lead/summary.md. Write your review to /app/output/reviewer/review.md."
 
 volumes:
   cowork-tasks:

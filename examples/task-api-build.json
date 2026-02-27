@@ -1,8 +1,9 @@
 {
   "task_id": "task-example-api",
-  "description": "Build a REST API with Express.js that includes user authentication, CRUD operations for a 'projects' resource, and PostgreSQL integration",
+  "description": "Build a REST API with Express.js that includes user authentication (JWT), CRUD operations for a 'projects' resource, and PostgreSQL integration using Knex.js.",
   "priority": "high",
-  "context": "Greenfield project. Use Express.js, PostgreSQL, JWT for auth. Follow REST conventions.",
-  "expected_output": "Working Express API with routes, middleware, models, and tests. Docker-ready.",
-  "dependencies": []
+  "context": "Greenfield project. Use Express.js, PostgreSQL with Knex.js for queries, JWT for auth, bcrypt for password hashing. Follow REST conventions. Include error handling middleware.",
+  "expected_output": "Working Express API with routes, middleware, models, migrations, seed data, and tests. Include a Dockerfile and docker-compose.yml.",
+  "dependencies": [],
+  "timeout_minutes": 60
 }

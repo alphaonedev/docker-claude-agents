@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alphaonedev/docker-claude-agents/schemas/task.schema.json",
+  "title": "Agent Task",
+  "description": "Schema for task files passed between agents via shared volumes.",
+  "type": "object",
+  "required": ["task_id", "description"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^task-[a-z0-9-]+$",
+      "description": "Unique task identifier (e.g., task-20260227-143000-12345)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000,
+      "description": "What needs to be done — detailed enough for an agent to act on autonomously"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"],
+      "default": "medium",
+      "description": "Task priority level"
+    },
+    "context": {
+      "type": "string",
+      "description": "Background information, constraints, or relevant details"
+    },
+    "expected_output": {
+      "type": "string",
+      "description": "Description of what the successful result should look like"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^task-[a-z0-9-]+$"
+      },
+      "uniqueItems": true,
+      "description": "Task IDs that must complete before this task can start"
+    },
+    "assigned_to": {
+      "type": "string",
+      "enum": ["master", "researcher", "coder", "reviewer", "tester", "deployer"],
+      "description": "Agent this task is assigned to"
+    },
+    "timeout_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 120,
+      "default": 30,
+      "description": "Maximum minutes before this task is considered timed out"
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the task was created"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key-value pairs for custom metadata",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

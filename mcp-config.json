@@ -3,7 +3,7 @@
     "github": {
       "command": "mcp-server-github",
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "set-via-docker-compose-env"
       }
     },
     "filesystem": {
@@ -13,13 +13,13 @@
     "brave-search": {
       "command": "mcp-server-brave-search",
       "env": {
-        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+        "BRAVE_API_KEY": "set-via-docker-compose-env"
       }
     },
     "postgres": {
       "command": "mcp-server-postgres",
       "env": {
-        "DATABASE_URL": "postgres://user:pass@db-service:5432/mydb"
+        "DATABASE_URL": "set-via-docker-compose-env"
       }
     }
   }

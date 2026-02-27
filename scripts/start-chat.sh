@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 ###############################################################################
-# start-chat.sh - Launch a single interactive Claude agent
+# start-chat.sh — Launch a single interactive Claude agent
+#
+# Usage:
+#   ./scripts/start-chat.sh                                   # interactive
+#   ./scripts/start-chat.sh --dangerously-skip-permissions \
+#     "Analyze this codebase"                                  # one-shot
 ###############################################################################
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib.sh"
 
-cd "$PROJECT_DIR"
+check_docker
+check_api_key
+check_workspace
 
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found. Copy .env.example to .env and set your API key."
-    exit 1
-fi
-
-echo "=== Docker Claude Agents - Interactive Chat Mode ==="
-echo ""
+print_banner "Interactive Chat"
 
 docker compose -f docker-compose.chat.yml run --rm claude-chat "$@"
