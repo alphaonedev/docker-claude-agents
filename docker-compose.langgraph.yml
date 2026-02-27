@@ -20,7 +20,6 @@ services:
     restart: on-failure:3
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    pids_limit: 512
     environment:
       LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
@@ -56,6 +55,7 @@ services:
         limits:
           cpus: "4"
           memory: 8G
+          pids: 512
         reservations:
           cpus: "1"
           memory: 1G
@@ -67,7 +67,6 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     cap_add: [SETUID, SETGID, FOWNER, DAC_READ_SEARCH]
-    pids_limit: 128
     environment:
       POSTGRES_USER: ${LANGGRAPH_POSTGRES_USER:-langgraph}
       POSTGRES_PASSWORD: ${LANGGRAPH_POSTGRES_PASSWORD:-langgraph_secret}
@@ -91,6 +90,7 @@ services:
         limits:
           cpus: "2"
           memory: 2G
+          pids: 128
 
   # ── Redis — real-time state streaming + pub/sub ───────────────────────────
   langgraph-redis:
@@ -98,7 +98,6 @@ services:
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    pids_limit: 128
     networks: [agent-net]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -118,6 +117,7 @@ services:
         limits:
           cpus: "1"
           memory: 512M
+          pids: 128
 
 volumes:
   langgraph-pgdata:

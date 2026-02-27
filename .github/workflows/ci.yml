@@ -24,16 +24,26 @@ jobs:
 
       - name: Validate Docker Compose files
         run: |
-          echo "ANTHROPIC_API_KEY=test-key" > .env
-          echo "GITHUB_TOKEN=test-token" >> .env
-          echo "BRAVE_API_KEY=test-key" >> .env
-          echo "POSTGRES_PASSWORD=test-pass" >> .env
+          cat > .env <<'ENVEOF'
+          ANTHROPIC_API_KEY=test-key
+          GITHUB_TOKEN=test-token
+          BRAVE_API_KEY=test-key
+          POSTGRES_PASSWORD=test-pass
+          OPENAI_API_KEY=test-key
+          LANGCHAIN_API_KEY=test-key
+          LANGGRAPH_POSTGRES_PASSWORD=test-pass
+          AZURE_OPENAI_ENDPOINT=https://test.openai.azure.com/
+          AZURE_OPENAI_API_KEY=test-key
+          ENVEOF
 
           for desc_file in \
             "docker-compose.yml" \
             "docker-compose.chat.yml" \
             "docker-compose.cowork.yml" \
-            "docker-compose.yml -f docker-compose.mcp.yml"; do
+            "docker-compose.yml -f docker-compose.mcp.yml" \
+            "docker-compose.yml -f docker-compose.langgraph.yml" \
+            "docker-compose.yml -f docker-compose.msagent.yml" \
+            "docker-compose.yml -f docker-compose.langgraph.yml -f docker-compose.msagent.yml"; do
             echo "Validating ${desc_file}..."
             docker compose -f ${desc_file} config --quiet || exit 1
           done
@@ -111,6 +121,14 @@ jobs:
             "docker-compose.chat.yml"
             "docker-compose.cowork.yml"
             "docker-compose.mcp.yml"
+            "docker-compose.langgraph.yml"
+            "docker-compose.msagent.yml"
+            "frameworks/langgraph/langgraph.json"
+            "frameworks/langgraph/graph.py"
+            "frameworks/langgraph/requirements.txt"
+            "frameworks/msagent/Dockerfile"
+            "frameworks/msagent/requirements.txt"
+            "frameworks/msagent/msagent/server.py"
             ".env.example"
             ".dockerignore"
             ".gitignore"

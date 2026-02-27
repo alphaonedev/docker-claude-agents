@@ -23,7 +23,6 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     read_only: true
-    pids_limit: 256
     tmpfs:
       - /tmp:size=100M,noexec,nosuid
       - /home/node/.config:size=50M,noexec,nosuid
@@ -47,6 +46,7 @@ services:
         limits:
           cpus: "2"
           memory: 4G
+          pids: 256
         reservations:
           cpus: "0.5"
           memory: 512M

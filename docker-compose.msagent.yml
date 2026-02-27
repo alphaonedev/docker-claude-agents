@@ -21,7 +21,6 @@ services:
     restart: on-failure:3
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    pids_limit: 512
     environment:
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
@@ -58,6 +57,7 @@ services:
         limits:
           cpus: "4"
           memory: 8G
+          pids: 512
         reservations:
           cpus: "1"
           memory: 1G
@@ -68,7 +68,6 @@ services:
     restart: on-failure:3
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    pids_limit: 256
     environment:
       KernelMemory__TextGeneratorType: ${KM_TEXT_GENERATOR:-AzureOpenAIText}
       KernelMemory__DataIngestion__EmbeddingGeneratorTypes__0: ${KM_EMBEDDING_GENERATOR:-AzureOpenAIEmbedding}
@@ -97,6 +96,7 @@ services:
         limits:
           cpus: "2"
           memory: 4G
+          pids: 256
         reservations:
           cpus: "0.5"
           memory: 512M
@@ -108,7 +108,6 @@ services:
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
-    pids_limit: 128
     networks: [agent-net]
     entrypoint: ["python", "-m", "http.server", "8888"]
     tmpfs:
@@ -130,6 +129,7 @@ services:
         limits:
           cpus: "2"
           memory: 2G
+          pids: 128
 
 volumes:
   msagent-memory-data:
