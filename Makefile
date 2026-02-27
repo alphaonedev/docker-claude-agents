@@ -137,4 +137,4 @@ validate: ## Validate compose files, schemas, and environment
 
 lint: ## Lint shell scripts with shellcheck
 	@command -v shellcheck &>/dev/null || { echo "shellcheck not found — install: brew install shellcheck"; exit 1; }
-	shellcheck scripts/*.sh
+	shellcheck -x scripts/*.sh
