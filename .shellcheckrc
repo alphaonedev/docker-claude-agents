@@ -1,0 +1,8 @@
+# Disable SC1091: shellcheck can't follow source with dynamic paths (${SCRIPT_DIR}/lib.sh)
+disable=SC1091
+
+# Disable SC2015: A && B || C pattern is intentional in our scripts
+disable=SC2015
+
+# Disable SC2059: printf format strings with variables are intentional (color codes)
+disable=SC2059
