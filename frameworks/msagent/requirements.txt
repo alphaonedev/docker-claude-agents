@@ -1,0 +1,10 @@
+# Microsoft Agent Framework dependencies
+semantic-kernel>=1.39.0
+autogen-agentchat>=0.4.0
+autogen-ext[grpc,docker]>=0.4.0
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+uvicorn>=0.30.0
+fastapi>=0.115.0
+httpx>=0.27.0
+pydantic>=2.0.0

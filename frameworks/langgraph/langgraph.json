@@ -1,0 +1,8 @@
+{
+  "$schema": "https://langchain-ai.github.io/langgraph/reference/cli/#configuration-file",
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./graph.py:graph"
+  },
+  "env": ".env"
+}

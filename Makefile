@@ -5,10 +5,14 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-COMPOSE        := docker compose
-COMPOSE_CHAT   := $(COMPOSE) -f docker-compose.chat.yml
-COMPOSE_COWORK := $(COMPOSE) -f docker-compose.cowork.yml
-COMPOSE_MCP    := $(COMPOSE) -f docker-compose.yml -f docker-compose.mcp.yml
+COMPOSE           := docker compose
+COMPOSE_CHAT      := $(COMPOSE) -f docker-compose.chat.yml
+COMPOSE_COWORK    := $(COMPOSE) -f docker-compose.cowork.yml
+COMPOSE_MCP       := $(COMPOSE) -f docker-compose.yml -f docker-compose.mcp.yml
+COMPOSE_LANGGRAPH := $(COMPOSE) -f docker-compose.yml -f docker-compose.langgraph.yml
+COMPOSE_MSAGENT   := $(COMPOSE) -f docker-compose.yml -f docker-compose.msagent.yml
+COMPOSE_PLATFORM  := $(COMPOSE) -f docker-compose.yml -f docker-compose.langgraph.yml -f docker-compose.msagent.yml
+COMPOSE_FULL      := $(COMPOSE) -f docker-compose.yml -f docker-compose.langgraph.yml -f docker-compose.msagent.yml -f docker-compose.mcp.yml
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -18,6 +22,7 @@ RESET := \033[0m
 # ═════════════════════════════════════════════════════════════════════════════
 
 .PHONY: help setup build-base build team chat cowork mcp task run \
+        langgraph msagent platform full \
         logs status health stop clean purge validate lint
 
 help: ## Show this help
@@ -58,6 +63,18 @@ cowork: ## Launch lead + reviewer pair programming
 
 mcp: ## Launch agents with MCP tool servers
 	./scripts/start-with-mcp.sh
+
+langgraph: build-base ## Launch Claude agents + LangGraph stack
+	$(COMPOSE_LANGGRAPH) up --build
+
+msagent: build-base ## Launch Claude agents + Microsoft Agent Framework
+	$(COMPOSE_MSAGENT) up --build
+
+platform: build-base ## Launch all 3 frameworks (Claude + LangGraph + MS Agent)
+	$(COMPOSE_PLATFORM) up --build
+
+full: build-base ## Launch all frameworks + MCP tool servers
+	$(COMPOSE_FULL) up --build
 
 task: ## Submit a task (usage: make task PROMPT="your task here")
 	@[ -n "$(PROMPT)" ] || (echo "Usage: make task PROMPT=\"your task here\"" && exit 1)
@@ -101,6 +118,10 @@ validate: ## Validate compose files, schemas, and environment
 	@$(COMPOSE_CHAT) config --quiet
 	@echo "Validating docker-compose.cowork.yml..."
 	@$(COMPOSE_COWORK) config --quiet
+	@echo "Validating docker-compose.langgraph.yml..."
+	@$(COMPOSE_LANGGRAPH) config --quiet
+	@echo "Validating docker-compose.msagent.yml..."
+	@$(COMPOSE_MSAGENT) config --quiet
 	@echo ""
 	@echo "Validating JSON schemas..."
 	@for f in schemas/*.json; do jq empty "$$f" && echo "  $$f OK" || exit 1; done

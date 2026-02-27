@@ -1,0 +1,130 @@
+###############################################################################
+# Docker Claude Agents — LangGraph Deep Agents Overlay
+#
+# Adds LangGraph graph-based agent orchestration with PostgreSQL checkpointing
+# and Redis pub/sub for real-time state streaming.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.langgraph.yml up --build
+#
+# Prerequisites (set in .env):
+#   OPENAI_API_KEY or ANTHROPIC_API_KEY (LangGraph supports both)
+#   LANGCHAIN_API_KEY (optional, for LangSmith tracing)
+###############################################################################
+
+services:
+
+  # ── LangGraph API Server ──────────────────────────────────────────────────
+  langgraph-api:
+    image: ${LANGGRAPH_IMAGE:-langchain/langgraph-api:latest}
+    restart: on-failure:3
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 512
+    environment:
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-docker-claude-agents}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      POSTGRES_URI: "postgres://${LANGGRAPH_POSTGRES_USER:-langgraph}:${LANGGRAPH_POSTGRES_PASSWORD:-langgraph_secret}@langgraph-postgres:5432/${LANGGRAPH_POSTGRES_DB:-langgraph}"
+      REDIS_URI: "redis://langgraph-redis:6379"
+    ports:
+      - "${LANGGRAPH_PORT:-8123}:8000"
+    networks: [agent-net]
+    depends_on:
+      langgraph-postgres:
+        condition: service_healthy
+      langgraph-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/ok\")' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    tmpfs:
+      - /tmp:size=200M,noexec,nosuid
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "{{.Name}}"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
+  # ── PostgreSQL — LangGraph state checkpoints + pgvector ───────────────────
+  langgraph-postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, FOWNER, DAC_READ_SEARCH]
+    pids_limit: 128
+    environment:
+      POSTGRES_USER: ${LANGGRAPH_POSTGRES_USER:-langgraph}
+      POSTGRES_PASSWORD: ${LANGGRAPH_POSTGRES_PASSWORD:-langgraph_secret}
+      POSTGRES_DB: ${LANGGRAPH_POSTGRES_DB:-langgraph}
+    networks: [agent-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGGRAPH_POSTGRES_USER:-langgraph} -d ${LANGGRAPH_POSTGRES_DB:-langgraph}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - langgraph-pgdata:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  # ── Redis — real-time state streaming + pub/sub ───────────────────────────
+  langgraph-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 128
+    networks: [agent-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - langgraph-redis-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+volumes:
+  langgraph-pgdata:
+    driver: local
+    labels:
+      com.claude-agents.purpose: "LangGraph PostgreSQL checkpoint storage"
+  langgraph-redis-data:
+    driver: local
+    labels:
+      com.claude-agents.purpose: "LangGraph Redis pub/sub persistence"

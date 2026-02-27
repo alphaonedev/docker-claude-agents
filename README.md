@@ -1,6 +1,6 @@
 # Docker Claude Agents
 
-A production-grade, Docker-based reference architecture for running a coordinated team of 6 autonomous [Claude Code](https://docs.anthropic.com/en/docs/claude-code) agents. One master controller orchestrates five specialist workers — researcher, coder, reviewer, tester, and deployer — that communicate through shared volumes using a structured JSON protocol.
+A production-grade, Docker-based reference architecture for running autonomous AI agent teams across three frameworks: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (6 agents), [LangGraph](https://www.langchain.com/langgraph) (graph-based orchestration), and [Microsoft Agent Framework](https://learn.microsoft.com/en-us/semantic-kernel/) (Semantic Kernel + AutoGen). All containers are CIS Docker Benchmark hardened with `cap_drop: ALL`, `no-new-privileges`, `read_only` rootfs, and resource limits.
 
 ## Architecture
 
@@ -62,12 +62,16 @@ make run PROMPT="Refactor to async/await"  # one-shot autonomous task
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| **Full Team** | `make team` | All 6 agents collaborating on a complex task |
+| **Full Team** | `make team` | All 6 Claude agents collaborating on a complex task |
 | **Chat** | `make chat` | Single interactive agent for ad-hoc work |
 | **Single Task** | `make run PROMPT="..."` | One-off autonomous task, no interaction |
 | **Submit Task** | `make task PROMPT="..."` | Submit to master controller for team decomposition |
 | **Cowork** | `make cowork` | Lead + reviewer pair programming |
 | **With MCP** | `make mcp` | Full team + GitHub, Search, DB tool servers |
+| **LangGraph** | `make langgraph` | Claude agents + LangGraph graph-based orchestration |
+| **MS Agent** | `make msagent` | Claude agents + Microsoft Agent Framework (SK + AutoGen) |
+| **Platform** | `make platform` | All 3 frameworks (Claude + LangGraph + MS Agent) |
+| **Full** | `make full` | All frameworks + MCP tool servers |
 
 ### Direct Docker usage
 
@@ -75,18 +79,18 @@ make run PROMPT="Refactor to async/await"  # one-shot autonomous task
 # Interactive single agent
 docker compose -f docker-compose.chat.yml run --rm claude-chat
 
-# One-off autonomous task
-docker run -it \
-  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-  -v $(pwd)/workspace:/app \
-  claude-agent-base --dangerously-skip-permissions \
-  "Refactor the files in this directory to use async/await"
-
-# Full team
+# Full Claude team
 docker compose up --build
 
-# With MCP services
-docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build
+# Claude + LangGraph
+docker compose -f docker-compose.yml -f docker-compose.langgraph.yml up --build
+
+# Claude + Microsoft Agent Framework
+docker compose -f docker-compose.yml -f docker-compose.msagent.yml up --build
+
+# All 3 frameworks + MCP
+docker compose -f docker-compose.yml -f docker-compose.langgraph.yml \
+  -f docker-compose.msagent.yml -f docker-compose.mcp.yml up --build
 ```
 
 ## Project Structure
@@ -99,11 +103,25 @@ docker-claude-agents/
 ├── docker-compose.chat.yml      # Interactive single-agent mode
 ├── docker-compose.cowork.yml    # Lead + reviewer pair mode
 ├── docker-compose.mcp.yml       # MCP services overlay
+├── docker-compose.langgraph.yml # LangGraph Deep Agents overlay
+├── docker-compose.msagent.yml   # Microsoft Agent Framework overlay
 ├── .env.example                 # Environment variable template
 ├── .dockerignore                # Docker build exclusions
 ├── mcp-config.json              # MCP server configuration
 │
-├── agents/                      # One directory per agent role
+├── frameworks/                  # Multi-framework agent runtimes
+│   ├── langgraph/
+│   │   ├── langgraph.json       # LangGraph configuration
+│   │   ├── graph.py             # Reference graph definition
+│   │   └── requirements.txt     # Python dependencies
+│   └── msagent/
+│       ├── Dockerfile           # MS Agent Framework image
+│       ├── requirements.txt     # Python dependencies
+│       └── msagent/             # Framework runtime code
+│           ├── __init__.py
+│           └── server.py        # HTTP + gRPC server
+│
+├── agents/                      # One directory per Claude agent role
 │   ├── master-controller/
 │   │   ├── Dockerfile           # Thin layer (4 lines, extends base)
 │   │   ├── system-prompt.md     # Role + protocol (~35 lines)
@@ -218,6 +236,30 @@ The `docker-compose.mcp.yml` overlay adds [Model Context Protocol](https://model
 
 Add custom MCP servers by extending `docker-compose.mcp.yml`.
 
+## LangGraph Deep Agents
+
+The `docker-compose.langgraph.yml` overlay adds [LangGraph](https://www.langchain.com/langgraph) graph-based agent orchestration:
+
+| Service | Purpose | Image |
+|---------|---------|-------|
+| **langgraph-api** | Graph execution runtime, REST + streaming | `langchain/langgraph-api` |
+| **langgraph-postgres** | State checkpointing + pgvector embeddings | `pgvector/pgvector:pg16` |
+| **langgraph-redis** | Real-time state streaming, pub/sub | `redis:7-alpine` |
+
+Features: state graph workflows, conditional routing, checkpoint/resume/replay, human-in-the-loop breakpoints, multi-agent topologies (supervisor, handoff, hierarchical teams), LangSmith tracing.
+
+## Microsoft Agent Framework
+
+The `docker-compose.msagent.yml` overlay adds [Microsoft Agent Framework](https://learn.microsoft.com/en-us/semantic-kernel/) (Semantic Kernel + AutoGen):
+
+| Service | Purpose | Image |
+|---------|---------|-------|
+| **msagent-runtime** | Semantic Kernel + AutoGen agent runtime | Custom (Dockerfile) |
+| **msagent-memory** | Kernel Memory RAG pipeline + vector store | `kernelmemory/service` |
+| **msagent-code-executor** | Sandboxed code execution | `python:3.12-slim` |
+
+Features: gRPC distributed runtime, plugin architecture (native + OpenAPI + MCP), multi-model support (Azure OpenAI, Anthropic, Ollama), actor-model multi-agent conversations, Docker code executor.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -229,6 +271,12 @@ Add custom MCP servers by extending `docker-compose.mcp.yml`.
 | `POSTGRES_USER` | MCP only | `claude_agent` | Database user |
 | `POSTGRES_PASSWORD` | MCP only | — | Database password |
 | `POSTGRES_DB` | MCP only | `agentdb` | Database name |
+| `OPENAI_API_KEY` | LangGraph | — | OpenAI API key |
+| `LANGCHAIN_API_KEY` | LangGraph (optional) | — | LangSmith tracing key |
+| `LANGGRAPH_POSTGRES_PASSWORD` | LangGraph | `langgraph_secret` | LangGraph DB password |
+| `AZURE_OPENAI_ENDPOINT` | MS Agent | — | Azure OpenAI endpoint |
+| `AZURE_OPENAI_API_KEY` | MS Agent | — | Azure OpenAI key |
+| `AZURE_OPENAI_DEPLOYMENT` | MS Agent | `gpt-4o` | Azure OpenAI deployment |
 
 ## Key Design Decisions
 

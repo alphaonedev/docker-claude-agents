@@ -1,0 +1,138 @@
+###############################################################################
+# Docker Claude Agents — Microsoft Agent Framework Overlay
+#
+# Adds Microsoft Agent Framework (Semantic Kernel + AutoGen) with gRPC
+# distributed runtime, Kernel Memory RAG pipeline, and Docker code executor.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.msagent.yml up --build
+#
+# Prerequisites (set in .env):
+#   AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY (or OPENAI_API_KEY)
+###############################################################################
+
+services:
+
+  # ── Microsoft Agent Framework Runtime ─────────────────────────────────────
+  msagent-runtime:
+    build:
+      context: ./frameworks/msagent
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 512
+    environment:
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GRPC_PORT: "50051"
+      KERNEL_MEMORY_URL: "http://msagent-memory:8080"
+    ports:
+      - "${MSAGENT_GRPC_PORT:-50051}:50051"
+      - "${MSAGENT_HTTP_PORT:-8200}:8080"
+    networks: [agent-net]
+    depends_on:
+      msagent-memory:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/health\")' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    tmpfs:
+      - /tmp:size=200M,noexec,nosuid
+    volumes:
+      - ./workspace:/app/workspace
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "{{.Name}}"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
+  # ── Kernel Memory — RAG pipeline + vector store ───────────────────────────
+  msagent-memory:
+    image: ${KERNEL_MEMORY_IMAGE:-kernelmemory/service:latest}
+    restart: on-failure:3
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 256
+    environment:
+      KernelMemory__TextGeneratorType: ${KM_TEXT_GENERATOR:-AzureOpenAIText}
+      KernelMemory__DataIngestion__EmbeddingGeneratorTypes__0: ${KM_EMBEDDING_GENERATOR:-AzureOpenAIEmbedding}
+      AzureOpenAIText__Endpoint: ${AZURE_OPENAI_ENDPOINT:-}
+      AzureOpenAIText__APIKey: ${AZURE_OPENAI_API_KEY:-}
+      AzureOpenAIText__Deployment: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o}
+      AzureOpenAIEmbedding__Endpoint: ${AZURE_OPENAI_ENDPOINT:-}
+      AzureOpenAIEmbedding__APIKey: ${AZURE_OPENAI_API_KEY:-}
+      AzureOpenAIEmbedding__Deployment: ${KM_EMBEDDING_DEPLOYMENT:-text-embedding-3-large}
+    networks: [agent-net]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    volumes:
+      - msagent-memory-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ── Docker Code Executor — sandboxed code execution ───────────────────────
+  msagent-code-executor:
+    image: python:3.12-slim
+    restart: on-failure:3
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    pids_limit: 128
+    networks: [agent-net]
+    entrypoint: ["python", "-m", "http.server", "8888"]
+    tmpfs:
+      - /tmp:size=500M,noexec,nosuid
+      - /home/appuser:size=100M,noexec,nosuid
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8888\")' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+volumes:
+  msagent-memory-data:
+    driver: local
+    labels:
+      com.claude-agents.purpose: "Microsoft Kernel Memory persistent storage"
