@@ -1,0 +1,85 @@
+###############################################################################
+# Docker Claude Agents - Extended with MCP Services
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.mcp.yml up --build
+#
+# This overlay adds MCP (Model Context Protocol) servers that agents can
+# connect to for enhanced capabilities: GitHub, filesystem, search, database.
+#
+# Prerequisites:
+#   - Set ANTHROPIC_API_KEY in .env
+#   - Set GITHUB_TOKEN in .env (for GitHub MCP)
+#   - Set BRAVE_API_KEY in .env (for Brave Search MCP)
+###############################################################################
+
+services:
+  # =========================================================================
+  # MCP SERVERS - Tool servers that agents can connect to
+  # =========================================================================
+
+  # GitHub MCP - Provides GitHub API access to agents
+  mcp-github:
+    image: mcp/github-server:latest
+    container_name: mcp_github
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_TOKEN}
+    networks:
+      - agent-net
+
+  # Filesystem MCP - Provides structured file access
+  mcp-filesystem:
+    image: mcp/filesystem-server:latest
+    container_name: mcp_filesystem
+    volumes:
+      - ./workspace:/app/workspace
+    command: ["/app/workspace"]
+    networks:
+      - agent-net
+
+  # Brave Search MCP - Provides web search capabilities
+  mcp-search:
+    image: mcp/brave-search-server:latest
+    container_name: mcp_search
+    environment:
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+    networks:
+      - agent-net
+
+  # PostgreSQL MCP - Provides database access
+  mcp-postgres:
+    image: mcp/postgres-server:latest
+    container_name: mcp_postgres
+    environment:
+      - DATABASE_URL=postgres://user:pass@db-service:5432/mydb
+    networks:
+      - agent-net
+    depends_on:
+      db-service:
+        condition: service_healthy
+
+  # =========================================================================
+  # BACKING SERVICES
+  # =========================================================================
+
+  # PostgreSQL database for agents to work with
+  db-service:
+    image: postgres:15-alpine
+    container_name: claude_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: mydb
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
+    driver: local

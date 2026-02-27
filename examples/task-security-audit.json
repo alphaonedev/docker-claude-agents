@@ -1,0 +1,8 @@
+{
+  "task_id": "task-example-security",
+  "description": "Perform a comprehensive security audit of the workspace codebase. Check for OWASP Top 10 vulnerabilities, dependency issues, and insecure configurations.",
+  "priority": "high",
+  "context": "Production codebase that needs security review before deployment.",
+  "expected_output": "Detailed security report with findings, severity ratings, and remediation steps",
+  "dependencies": []
+}

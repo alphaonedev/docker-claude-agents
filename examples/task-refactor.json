@@ -1,0 +1,8 @@
+{
+  "task_id": "task-example-refactor",
+  "description": "Refactor all JavaScript files in the workspace to use async/await instead of callbacks and Promises",
+  "priority": "high",
+  "context": "The codebase uses a mix of callbacks, Promises, and some async/await. Standardize to async/await throughout.",
+  "expected_output": "All JS files updated with async/await patterns, existing tests still pass",
+  "dependencies": []
+}

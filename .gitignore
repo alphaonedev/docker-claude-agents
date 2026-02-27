@@ -1,0 +1,23 @@
+# Environment variables (contains secrets)
+.env
+
+# Claude auth/config (contains tokens)
+.claude/
+
+# Workspace files (user-specific)
+workspace/*
+!workspace/.gitkeep
+
+# Docker volumes
+db-data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/

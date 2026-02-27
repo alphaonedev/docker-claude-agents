@@ -1,0 +1,203 @@
+###############################################################################
+# Docker Claude Agents - Full 6-Agent Orchestration
+#
+# Usage:
+#   docker compose up --build                    # Launch all agents
+#   docker compose up --build master-controller  # Launch master only
+#   docker compose run --rm coder --dangerously-skip-permissions "your prompt"
+#
+# Prerequisites:
+#   - Set ANTHROPIC_API_KEY in .env or environment
+###############################################################################
+
+services:
+  # =========================================================================
+  # 1. MASTER CONTROLLER - Orchestrates all worker agents
+  # =========================================================================
+  master-controller:
+    build:
+      context: ./agents/master-controller
+      dockerfile: Dockerfile
+    container_name: claude_master_controller
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_AGENT_ROLE=master-controller
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app/workspace
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    networks:
+      - agent-net
+    command: >
+      --dangerously-skip-permissions
+      "You are the master controller. Read the task from /app/tasks/master/incoming.json, decompose it into subtasks, and write them to the appropriate agent task directories. Monitor /app/status/ for completion."
+    depends_on:
+      task-init:
+        condition: service_completed_successfully
+
+  # =========================================================================
+  # 2. RESEARCHER AGENT - Information gathering and analysis
+  # =========================================================================
+  researcher:
+    build:
+      context: ./agents/researcher
+      dockerfile: Dockerfile
+    container_name: claude_researcher
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_AGENT_ROLE=researcher
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app/workspace
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    networks:
+      - agent-net
+    command: >
+      --dangerously-skip-permissions
+      "You are the researcher agent. Check /app/tasks/researcher/ for task files. For each task, research the workspace, write findings to /app/output/researcher/, and update your status in /app/status/researcher/current.json."
+    depends_on:
+      task-init:
+        condition: service_completed_successfully
+
+  # =========================================================================
+  # 3. CODER AGENT - Code implementation and bug fixes
+  # =========================================================================
+  coder:
+    build:
+      context: ./agents/coder
+      dockerfile: Dockerfile
+    container_name: claude_coder
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_AGENT_ROLE=coder
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app/workspace
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    networks:
+      - agent-net
+    command: >
+      --dangerously-skip-permissions
+      "You are the coder agent. Check /app/tasks/coder/ for task files. For each task, implement the code changes in /app/workspace/, write summaries to /app/output/coder/, and update your status in /app/status/coder/current.json."
+    depends_on:
+      task-init:
+        condition: service_completed_successfully
+
+  # =========================================================================
+  # 4. REVIEWER AGENT - Code review and security auditing
+  # =========================================================================
+  reviewer:
+    build:
+      context: ./agents/reviewer
+      dockerfile: Dockerfile
+    container_name: claude_reviewer
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_AGENT_ROLE=reviewer
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app/workspace
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    networks:
+      - agent-net
+    command: >
+      --dangerously-skip-permissions
+      "You are the reviewer agent. Check /app/tasks/reviewer/ for task files. For each task, review code in /app/workspace/, write review reports to /app/output/reviewer/, and update your status in /app/status/reviewer/current.json."
+    depends_on:
+      task-init:
+        condition: service_completed_successfully
+
+  # =========================================================================
+  # 5. TESTER AGENT - Test writing and execution
+  # =========================================================================
+  tester:
+    build:
+      context: ./agents/tester
+      dockerfile: Dockerfile
+    container_name: claude_tester
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_AGENT_ROLE=tester
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app/workspace
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    networks:
+      - agent-net
+    command: >
+      --dangerously-skip-permissions
+      "You are the tester agent. Check /app/tasks/tester/ for task files. For each task, write and run tests in /app/workspace/, write test reports to /app/output/tester/, and update your status in /app/status/tester/current.json."
+    depends_on:
+      task-init:
+        condition: service_completed_successfully
+
+  # =========================================================================
+  # 6. DEPLOYER AGENT - CI/CD and deployment automation
+  # =========================================================================
+  deployer:
+    build:
+      context: ./agents/deployer
+      dockerfile: Dockerfile
+    container_name: claude_deployer
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_AGENT_ROLE=deployer
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app/workspace
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    networks:
+      - agent-net
+    command: >
+      --dangerously-skip-permissions
+      "You are the deployer agent. Check /app/tasks/deployer/ for task files. For each task, create deployment configs in /app/workspace/, write results to /app/output/deployer/, and update your status in /app/status/deployer/current.json."
+    depends_on:
+      task-init:
+        condition: service_completed_successfully
+
+  # =========================================================================
+  # INIT SERVICE - Creates shared directory structure on volumes
+  # =========================================================================
+  task-init:
+    image: node:22-slim
+    volumes:
+      - shared-tasks:/app/tasks
+      - shared-status:/app/status
+      - shared-output:/app/output
+    command: >
+      sh -c "
+        mkdir -p /app/tasks/{master,researcher,coder,reviewer,tester,deployer} &&
+        mkdir -p /app/status/{master,researcher,coder,reviewer,tester,deployer} &&
+        mkdir -p /app/output/{master,researcher,coder,reviewer,tester,deployer} &&
+        echo 'Shared directories initialized'
+      "
+
+# =============================================================================
+# SHARED VOLUMES - Communication channels between agents
+# =============================================================================
+volumes:
+  shared-tasks:
+    driver: local
+  shared-status:
+    driver: local
+  shared-output:
+    driver: local
+
+# =============================================================================
+# NETWORK - Shared bridge network for agent communication
+# =============================================================================
+networks:
+  agent-net:
+    driver: bridge

@@ -1,0 +1,8 @@
+{
+  "task_id": "task-example-api",
+  "description": "Build a REST API with Express.js that includes user authentication, CRUD operations for a 'projects' resource, and PostgreSQL integration",
+  "priority": "high",
+  "context": "Greenfield project. Use Express.js, PostgreSQL, JWT for auth. Follow REST conventions.",
+  "expected_output": "Working Express API with routes, middleware, models, and tests. Docker-ready.",
+  "dependencies": []
+}

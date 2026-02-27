@@ -1,0 +1,32 @@
+###############################################################################
+# Docker Claude Agents - Interactive Chat Mode
+#
+# Usage:
+#   docker compose -f docker-compose.chat.yml run --rm claude-chat
+#
+# This compose file runs a single interactive Claude agent for ad-hoc tasks.
+# Use this for one-off commands, debugging, or interactive sessions.
+###############################################################################
+
+services:
+  claude-chat:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    container_name: claude_chat
+    stdin_open: true
+    tty: true
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./.claude:/home/node/.claude
+      - ./workspace:/app
+    networks:
+      - agent-net
+    # Interactive mode - drops you into Claude CLI
+    entrypoint: ["claude"]
+    command: ["--dangerously-skip-permissions"]
+
+networks:
+  agent-net:
+    driver: bridge
