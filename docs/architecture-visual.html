@@ -1,0 +1,886 @@
+---
+layout: null
+title: Architecture — Docker Claude Agents
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Architecture — Docker Claude Agents</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-primary:    #0a0e1a;
+    --bg-secondary:  #111827;
+    --bg-card:       rgba(17, 24, 39, 0.65);
+    --border-card:   rgba(99, 102, 241, 0.25);
+    --border-glow:   rgba(99, 102, 241, 0.45);
+    --text-primary:  #f1f5f9;
+    --text-secondary:#94a3b8;
+    --text-muted:    #64748b;
+    --accent:        #6366f1;
+    --accent-light:  #818cf8;
+    --accent-glow:   rgba(99, 102, 241, 0.35);
+    --cyan:          #22d3ee;
+    --cyan-glow:     rgba(34, 211, 238, 0.30);
+    --emerald:       #34d399;
+    --emerald-glow:  rgba(52, 211, 153, 0.30);
+    --amber:         #fbbf24;
+    --amber-glow:    rgba(251, 191, 36, 0.25);
+    --rose:          #f472b6;
+    --rose-glow:     rgba(244, 114, 182, 0.25);
+    --violet:        #a78bfa;
+    --violet-glow:   rgba(167, 139, 250, 0.30);
+    --font:          'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono:     'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+    --radius:        14px;
+    --radius-sm:     8px;
+    --blur:          20px;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  body {
+    font-family: var(--font);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Animated background ──────────────────────────────── */
+  .bg-mesh {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 20%, rgba(99,102,241,0.12), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 70%, rgba(34,211,238,0.08), transparent),
+      radial-gradient(ellipse 50% 60% at 50% 50%, rgba(52,211,153,0.05), transparent);
+  }
+  .grid-overlay {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.025;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  /* ── Layout ───────────────────────────────────────────── */
+  .page-wrap { position: relative; z-index: 1; }
+
+  /* Hero / Header */
+  .hero {
+    text-align: center;
+    padding: 56px 24px 40px;
+    position: relative;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 100px; padding: 6px 18px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+    color: var(--accent-light); text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .hero-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); animation: pulse-dot 2s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.4); } }
+
+  .hero h1 {
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    background: linear-gradient(135deg, #f1f5f9 0%, #818cf8 50%, #22d3ee 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 14px;
+  }
+  .hero p {
+    font-size: clamp(14px, 2vw, 18px);
+    color: var(--text-secondary);
+    max-width: 640px; margin: 0 auto;
+    line-height: 1.6;
+  }
+  .hero-back {
+    position: absolute; top: 20px; left: 24px;
+    color: var(--text-muted); font-size: 13px; font-weight: 500;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+    transition: color 0.2s;
+  }
+  .hero-back:hover { color: var(--accent-light); }
+
+  /* Section container */
+  .section {
+    max-width: 1200px;
+    margin: 0 auto 72px;
+    padding: 0 24px;
+  }
+  .section-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .section-label .line { width: 24px; height: 1px; background: var(--accent); }
+  .section-title {
+    font-size: clamp(22px, 3.5vw, 32px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .section-desc {
+    color: var(--text-secondary);
+    font-size: 15px;
+    line-height: 1.6;
+    max-width: 620px;
+    margin-bottom: 36px;
+  }
+
+  /* ── Glass card ───────────────────────────────────────── */
+  .glass {
+    background: var(--bg-card);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .glass:hover {
+    border-color: var(--border-glow);
+    box-shadow: 0 0 30px var(--accent-glow);
+  }
+
+  /* ── SECTION 1: Agent Orchestration ───────────────────── */
+  .orch-canvas {
+    padding: 48px 24px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .orch-canvas svg.orch-lines {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 0;
+  }
+  .orch-lines line {
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    opacity: 0.35;
+    animation: dash-flow 1.8s linear infinite;
+  }
+  @keyframes dash-flow { to { stroke-dashoffset: -20; } }
+
+  /* Master node */
+  .master-node {
+    position: relative; z-index: 2;
+    width: fit-content; margin: 0 auto 56px;
+    text-align: center;
+  }
+  .node-card {
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 20px 32px;
+    background: rgba(99,102,241,0.10);
+    border: 1.5px solid rgba(99,102,241,0.40);
+    border-radius: var(--radius);
+    position: relative;
+  }
+  .node-card.master {
+    background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(34,211,238,0.08));
+    border-color: rgba(99,102,241,0.55);
+    box-shadow: 0 0 40px rgba(99,102,241,0.15);
+  }
+  .node-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    margin-bottom: 10px;
+  }
+  .node-icon.master-icon { background: linear-gradient(135deg, var(--accent), var(--cyan)); }
+  .node-icon.research-icon { background: linear-gradient(135deg, var(--cyan), #06b6d4); }
+  .node-icon.coder-icon { background: linear-gradient(135deg, var(--emerald), #10b981); }
+  .node-icon.reviewer-icon { background: linear-gradient(135deg, var(--amber), #f59e0b); }
+  .node-icon.tester-icon { background: linear-gradient(135deg, var(--rose), #ec4899); }
+  .node-icon.deployer-icon { background: linear-gradient(135deg, var(--violet), #8b5cf6); }
+
+  .node-name {
+    font-size: 14px; font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 3px;
+  }
+  .node-role {
+    font-size: 11px; font-weight: 500;
+    color: var(--text-muted);
+    max-width: 120px;
+  }
+
+  /* Worker grid */
+  .workers-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    position: relative; z-index: 2;
+    margin-bottom: 56px;
+  }
+  .worker-card {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px 12px 16px;
+    background: rgba(17,24,39,0.50);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius);
+    transition: all 0.3s;
+    text-align: center;
+  }
+  .worker-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--border-glow);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  /* Shared volumes bar */
+  .volumes-bar {
+    position: relative; z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    padding: 20px 32px;
+    background: linear-gradient(135deg, rgba(52,211,153,0.08), rgba(34,211,238,0.06));
+    border: 1px solid rgba(52,211,153,0.25);
+    border-radius: var(--radius);
+  }
+  .vol-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px;
+    background: rgba(52,211,153,0.10);
+    border: 1px solid rgba(52,211,153,0.20);
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 12px; font-weight: 500;
+    color: var(--emerald);
+  }
+  .vol-chip .vol-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--emerald); }
+
+  /* ── SECTION 2: Network Topology ──────────────────────── */
+  .network-canvas {
+    padding: 40px 24px;
+    position: relative;
+  }
+  .net-layers {
+    display: flex; flex-direction: column; gap: 20px;
+    max-width: 720px; margin: 0 auto;
+  }
+  .net-layer {
+    padding: 20px 24px;
+    border-radius: var(--radius-sm);
+    position: relative;
+  }
+  .net-layer-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .net-layer-title .indicator {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .layer-agents {
+    background: rgba(99,102,241,0.06);
+    border: 1px solid rgba(99,102,241,0.20);
+  }
+  .layer-agents .net-layer-title { color: var(--accent-light); }
+  .layer-agents .indicator { background: var(--accent-light); }
+  .layer-dns {
+    background: rgba(34,211,238,0.06);
+    border: 1px solid rgba(34,211,238,0.20);
+  }
+  .layer-dns .net-layer-title { color: var(--cyan); }
+  .layer-dns .indicator { background: var(--cyan); }
+  .layer-mcp {
+    background: rgba(52,211,153,0.06);
+    border: 1px solid rgba(52,211,153,0.20);
+  }
+  .layer-mcp .net-layer-title { color: var(--emerald); }
+  .layer-mcp .indicator { background: var(--emerald); }
+  .layer-api {
+    background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.20);
+  }
+  .layer-api .net-layer-title { color: var(--amber); }
+  .layer-api .indicator { background: var(--amber); }
+
+  .net-nodes {
+    display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .net-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+  }
+  .net-chip .chip-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  .net-connector {
+    display: flex; align-items: center; justify-content: center;
+    height: 28px; position: relative;
+  }
+  .net-connector::before {
+    content: ''; width: 1.5px; height: 100%;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  }
+  .net-connector .arrow {
+    position: absolute; bottom: -2px;
+    color: var(--text-muted); font-size: 10px;
+  }
+
+  /* Network wrapper label */
+  .net-bridge-wrap {
+    border: 1.5px solid rgba(99,102,241,0.18);
+    border-radius: var(--radius);
+    padding: 24px 20px 20px;
+    position: relative;
+  }
+  .net-bridge-label {
+    position: absolute; top: -11px; left: 24px;
+    background: var(--bg-primary);
+    padding: 0 12px;
+    font-size: 12px; font-weight: 600;
+    color: var(--accent-light);
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── SECTION 3: Image Layering ────────────────────────── */
+  .image-canvas {
+    padding: 40px 24px;
+  }
+  .image-tree {
+    max-width: 600px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 0;
+  }
+  .img-layer {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 20px;
+    border-radius: var(--radius-sm);
+    position: relative;
+  }
+  .img-layer + .img-layer { margin-top: 4px; }
+  .img-connector-v {
+    display: flex; align-items: center; justify-content: center;
+    height: 24px; padding-left: 38px;
+  }
+  .img-connector-v::before {
+    content: ''; width: 1.5px; height: 100%;
+    background: rgba(255,255,255,0.10);
+  }
+  .img-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .img-info { flex: 1; }
+  .img-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .img-desc { font-size: 11px; color: var(--text-muted); }
+  .img-tag {
+    font-size: 10px; font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  .img-layer.base-os {
+    background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.18);
+  }
+  .img-layer.base-os .img-icon { background: linear-gradient(135deg, var(--amber), #f59e0b); }
+  .img-layer.base-os .img-tag { background: rgba(251,191,36,0.12); color: var(--amber); border: 1px solid rgba(251,191,36,0.25); }
+
+  .img-layer.base-agent {
+    background: rgba(99,102,241,0.06);
+    border: 1px solid rgba(99,102,241,0.18);
+  }
+  .img-layer.base-agent .img-icon { background: linear-gradient(135deg, var(--accent), var(--accent-light)); }
+  .img-layer.base-agent .img-tag { background: rgba(99,102,241,0.12); color: var(--accent-light); border: 1px solid rgba(99,102,241,0.25); }
+
+  .agent-leaves {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 4px;
+    padding-left: 0;
+  }
+  .agent-leaf {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius-sm);
+    transition: all 0.25s;
+  }
+  .agent-leaf:hover {
+    border-color: var(--border-glow);
+    background: rgba(99,102,241,0.05);
+    transform: translateY(-2px);
+  }
+  .leaf-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%; flex-shrink: 0;
+  }
+  .leaf-name { font-size: 12px; font-weight: 600; }
+  .leaf-size { font-size: 10px; color: var(--text-muted); margin-left: auto; font-family: var(--font-mono); }
+
+  /* ── SECTION 4: Compose Matrix ────────────────────────── */
+  .compose-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 40px 24px;
+  }
+  .compose-card {
+    padding: 20px;
+    background: rgba(17,24,39,0.50);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius);
+    transition: all 0.3s;
+  }
+  .compose-card:hover {
+    border-color: var(--border-glow);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  }
+  .compose-card-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; margin-bottom: 12px;
+  }
+  .compose-card-name {
+    font-size: 13px; font-weight: 700;
+    font-family: var(--font-mono);
+    margin-bottom: 4px;
+    color: var(--text-primary);
+  }
+  .compose-card-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .compose-card-cmd {
+    margin-top: 12px;
+    padding: 6px 10px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--emerald);
+  }
+
+  /* ── SECTION 5: CIS Compliance ────────────────────────── */
+  .cis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    padding: 40px 24px;
+  }
+  .cis-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 16px;
+    background: rgba(52,211,153,0.04);
+    border: 1px solid rgba(52,211,153,0.12);
+    border-radius: var(--radius-sm);
+  }
+  .cis-check {
+    width: 20px; height: 20px; flex-shrink: 0;
+    border-radius: 50%;
+    background: rgba(52,211,153,0.15);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--emerald);
+  }
+  .cis-text { font-size: 12px; font-weight: 500; line-height: 1.4; }
+  .cis-ref { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+
+  /* ── Footer ───────────────────────────────────────────── */
+  .page-footer {
+    text-align: center;
+    padding: 40px 24px 56px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .page-footer a { color: var(--accent-light); text-decoration: none; }
+  .page-footer a:hover { text-decoration: underline; }
+
+  /* ── Responsive ───────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .workers-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .workers-grid .worker-card:last-child {
+      grid-column: 1 / -1;
+      max-width: 200px;
+      margin: 0 auto;
+    }
+    .volumes-bar { flex-direction: column; gap: 10px; }
+    .compose-grid { grid-template-columns: 1fr; }
+    .agent-leaves { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 480px) {
+    .workers-grid { grid-template-columns: 1fr; }
+    .workers-grid .worker-card:last-child { max-width: 100%; }
+    .agent-leaves { grid-template-columns: 1fr; }
+    .cis-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Animations ───────────────────────────────────────── */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in {
+    opacity: 0;
+    animation: fade-up 0.6s ease-out forwards;
+  }
+  .delay-1 { animation-delay: 0.1s; }
+  .delay-2 { animation-delay: 0.2s; }
+  .delay-3 { animation-delay: 0.3s; }
+  .delay-4 { animation-delay: 0.4s; }
+  .delay-5 { animation-delay: 0.5s; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-primary); }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+</style>
+</head>
+<body>
+
+<div class="bg-mesh"></div>
+<div class="grid-overlay"></div>
+
+<div class="page-wrap">
+
+  <!-- ═══ HERO ══════════════════════════════════════════ -->
+  <header class="hero">
+    <a href="./" class="hero-back">← Back to docs</a>
+    <div class="hero-badge animate-in"><span class="dot"></span> Reference Architecture</div>
+    <h1 class="animate-in delay-1">Docker Claude Agents</h1>
+    <p class="animate-in delay-2">Production-grade Docker orchestration unifying Claude Code, LangGraph, and Microsoft Agent Framework — all CIS Docker Benchmark hardened.</p>
+  </header>
+
+  <!-- ═══ 1 · AGENT ORCHESTRATION ═══════════════════════ -->
+  <section class="section">
+    <div class="section-label animate-in delay-1"><span class="line"></span> Section 01</div>
+    <h2 class="section-title animate-in delay-2">Agent Orchestration</h2>
+    <p class="section-desc animate-in delay-3">Six containerized Claude Code agents collaborate through file-based IPC on shared Docker volumes. The Master Controller decomposes tasks, delegates to specialists, and aggregates results.</p>
+
+    <div class="glass orch-canvas animate-in delay-4">
+      <!-- Master Controller -->
+      <div class="master-node">
+        <div class="node-card master">
+          <div class="node-icon master-icon">👑</div>
+          <div class="node-name">Master Controller</div>
+          <div class="node-role">Orchestrator — decomposes &amp; delegates</div>
+        </div>
+      </div>
+
+      <!-- Worker agents -->
+      <div class="workers-grid">
+        <div class="worker-card">
+          <div class="node-icon research-icon">🔍</div>
+          <div class="node-name">Researcher</div>
+          <div class="node-role">Analysis, mapping, documentation</div>
+        </div>
+        <div class="worker-card">
+          <div class="node-icon coder-icon">⚡</div>
+          <div class="node-name">Coder</div>
+          <div class="node-role">Implementation, fixes, refactoring</div>
+        </div>
+        <div class="worker-card">
+          <div class="node-icon reviewer-icon">🛡️</div>
+          <div class="node-name">Reviewer</div>
+          <div class="node-role">Code review, security audit</div>
+        </div>
+        <div class="worker-card">
+          <div class="node-icon tester-icon">🧪</div>
+          <div class="node-name">Tester</div>
+          <div class="node-role">Tests, coverage, regression</div>
+        </div>
+        <div class="worker-card">
+          <div class="node-icon deployer-icon">🚀</div>
+          <div class="node-name">Deployer</div>
+          <div class="node-role">CI/CD, infra, Dockerfiles</div>
+        </div>
+      </div>
+
+      <!-- Shared volumes -->
+      <div class="volumes-bar">
+        <div style="font-size: 13px; font-weight: 600; color: var(--emerald); white-space: nowrap;">Shared Docker Volumes</div>
+        <div class="vol-chip"><span class="vol-dot"></span> tasks/</div>
+        <div class="vol-chip"><span class="vol-dot"></span> status/</div>
+        <div class="vol-chip"><span class="vol-dot"></span> output/</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 2 · NETWORK TOPOLOGY ══════════════════════════ -->
+  <section class="section">
+    <div class="section-label animate-in"><span class="line"></span> Section 02</div>
+    <h2 class="section-title animate-in delay-1">Network Topology</h2>
+    <p class="section-desc animate-in delay-2">All services share an isolated bridge network. Docker DNS enables inter-service resolution. MCP tool servers extend agent capabilities.</p>
+
+    <div class="glass network-canvas animate-in delay-3">
+      <div class="net-layers">
+        <div class="net-bridge-wrap">
+          <div class="net-bridge-label">agent-net (bridge)</div>
+
+          <div class="net-layer layer-agents">
+            <div class="net-layer-title"><span class="indicator"></span> Agent Containers</div>
+            <div class="net-nodes">
+              <span class="net-chip"><span class="chip-dot" style="background:var(--accent-light)"></span> master</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--cyan)"></span> researcher</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--emerald)"></span> coder</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--amber)"></span> reviewer</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--rose)"></span> tester</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--violet)"></span> deployer</span>
+            </div>
+          </div>
+
+          <div class="net-connector"><span class="arrow">▼</span></div>
+
+          <div class="net-layer layer-dns">
+            <div class="net-layer-title"><span class="indicator"></span> Docker DNS Resolution</div>
+            <div class="net-nodes">
+              <span class="net-chip">Service discovery via container names</span>
+            </div>
+          </div>
+
+          <div class="net-connector"><span class="arrow">▼</span></div>
+
+          <div class="net-layer layer-mcp">
+            <div class="net-layer-title"><span class="indicator"></span> MCP Tool Servers <span style="opacity:0.5; font-weight:400">(when enabled)</span></div>
+            <div class="net-nodes">
+              <span class="net-chip"><span class="chip-dot" style="background:var(--emerald)"></span> mcp-github</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--emerald)"></span> mcp-filesystem</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--emerald)"></span> mcp-brave</span>
+              <span class="net-chip"><span class="chip-dot" style="background:var(--emerald)"></span> mcp-postgres</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="net-connector"><span class="arrow">▼</span></div>
+
+        <div class="net-layer layer-api">
+          <div class="net-layer-title"><span class="indicator"></span> Outbound API</div>
+          <div class="net-nodes">
+            <span class="net-chip"><span class="chip-dot" style="background:var(--amber)"></span> api.anthropic.com</span>
+            <span class="net-chip"><span class="chip-dot" style="background:var(--amber)"></span> api.openai.com</span>
+            <span class="net-chip"><span class="chip-dot" style="background:var(--amber)"></span> Azure OpenAI</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 3 · IMAGE STRATEGY ════════════════════════════ -->
+  <section class="section">
+    <div class="section-label animate-in"><span class="line"></span> Section 03</div>
+    <h2 class="section-title animate-in delay-1">Image Layering Strategy</h2>
+    <p class="section-desc animate-in delay-2">A single base image contains all shared dependencies. Each agent is a thin 4-line Dockerfile layer — no duplication, fast rebuilds.</p>
+
+    <div class="glass image-canvas animate-in delay-3">
+      <div class="image-tree">
+        <!-- Layer 1: OS -->
+        <div class="img-layer base-os">
+          <div class="img-icon">📦</div>
+          <div class="img-info">
+            <div class="img-name">node:22-slim</div>
+            <div class="img-desc">Debian-based Node.js runtime</div>
+          </div>
+          <div class="img-tag">BASE OS</div>
+        </div>
+
+        <div class="img-connector-v"></div>
+
+        <!-- Layer 2: Agent base -->
+        <div class="img-layer base-agent">
+          <div class="img-icon">🔧</div>
+          <div class="img-info">
+            <div class="img-name">claude-agent-base</div>
+            <div class="img-desc">Claude Code CLI · tini · git · jq · curl</div>
+          </div>
+          <div class="img-tag">SHARED BASE</div>
+        </div>
+
+        <div class="img-connector-v"></div>
+
+        <!-- Layer 3: Agent leaves -->
+        <div class="agent-leaves">
+          <div class="agent-leaf">
+            <span class="leaf-dot" style="background: linear-gradient(135deg, var(--accent), var(--cyan))"></span>
+            <span class="leaf-name">master-controller</span>
+            <span class="leaf-size">4 lines</span>
+          </div>
+          <div class="agent-leaf">
+            <span class="leaf-dot" style="background: linear-gradient(135deg, var(--cyan), #06b6d4)"></span>
+            <span class="leaf-name">researcher</span>
+            <span class="leaf-size">4 lines</span>
+          </div>
+          <div class="agent-leaf">
+            <span class="leaf-dot" style="background: linear-gradient(135deg, var(--emerald), #10b981)"></span>
+            <span class="leaf-name">coder</span>
+            <span class="leaf-size">4 lines</span>
+          </div>
+          <div class="agent-leaf">
+            <span class="leaf-dot" style="background: linear-gradient(135deg, var(--amber), #f59e0b)"></span>
+            <span class="leaf-name">reviewer</span>
+            <span class="leaf-size">4 lines</span>
+          </div>
+          <div class="agent-leaf">
+            <span class="leaf-dot" style="background: linear-gradient(135deg, var(--rose), #ec4899)"></span>
+            <span class="leaf-name">tester</span>
+            <span class="leaf-size">4 lines</span>
+          </div>
+          <div class="agent-leaf">
+            <span class="leaf-dot" style="background: linear-gradient(135deg, var(--violet), #8b5cf6)"></span>
+            <span class="leaf-name">deployer</span>
+            <span class="leaf-size">4 lines</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 4 · COMPOSE FILES ═════════════════════════════ -->
+  <section class="section">
+    <div class="section-label animate-in"><span class="line"></span> Section 04</div>
+    <h2 class="section-title animate-in delay-1">Compose Architecture</h2>
+    <p class="section-desc animate-in delay-2">Five composable Docker Compose files for every mode — from single-agent chat to full three-framework deployment.</p>
+
+    <div class="glass animate-in delay-3">
+      <div class="compose-grid">
+        <div class="compose-card">
+          <div class="compose-card-icon" style="background: linear-gradient(135deg, var(--accent), var(--cyan));">🏗️</div>
+          <div class="compose-card-name">docker-compose.yml</div>
+          <div class="compose-card-desc">Core 6-agent orchestration with shared volumes and YAML anchors</div>
+          <div class="compose-card-cmd">make team</div>
+        </div>
+        <div class="compose-card">
+          <div class="compose-card-icon" style="background: linear-gradient(135deg, var(--cyan), #06b6d4);">💬</div>
+          <div class="compose-card-name">docker-compose.chat.yml</div>
+          <div class="compose-card-desc">Single interactive agent for ad-hoc work and exploration</div>
+          <div class="compose-card-cmd">make chat</div>
+        </div>
+        <div class="compose-card">
+          <div class="compose-card-icon" style="background: linear-gradient(135deg, var(--emerald), #10b981);">👥</div>
+          <div class="compose-card-name">docker-compose.cowork.yml</div>
+          <div class="compose-card-desc">Lead + reviewer pair programming mode</div>
+          <div class="compose-card-cmd">make cowork</div>
+        </div>
+        <div class="compose-card">
+          <div class="compose-card-icon" style="background: linear-gradient(135deg, var(--amber), #f59e0b);">🔌</div>
+          <div class="compose-card-name">docker-compose.mcp.yml</div>
+          <div class="compose-card-desc">MCP tool server overlay — GitHub, Search, DB</div>
+          <div class="compose-card-cmd">make mcp</div>
+        </div>
+        <div class="compose-card">
+          <div class="compose-card-icon" style="background: linear-gradient(135deg, var(--violet), #8b5cf6);">🔀</div>
+          <div class="compose-card-name">docker-compose.langgraph.yml</div>
+          <div class="compose-card-desc">LangGraph overlay with PostgreSQL + Redis</div>
+          <div class="compose-card-cmd">make langgraph</div>
+        </div>
+        <div class="compose-card">
+          <div class="compose-card-icon" style="background: linear-gradient(135deg, var(--rose), #ec4899);">🧠</div>
+          <div class="compose-card-name">docker-compose.msagent.yml</div>
+          <div class="compose-card-desc">Microsoft Agent Framework — SK + AutoGen + gRPC</div>
+          <div class="compose-card-cmd">make msagent</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 5 · CIS COMPLIANCE ════════════════════════════ -->
+  <section class="section">
+    <div class="section-label animate-in"><span class="line"></span> Section 05</div>
+    <h2 class="section-title animate-in delay-1">CIS Docker Benchmark Compliance</h2>
+    <p class="section-desc animate-in delay-2">Every container enforces production-grade security controls aligned to the CIS Docker Benchmark.</p>
+
+    <div class="glass animate-in delay-3">
+      <div class="cis-grid">
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">All capabilities dropped</div>
+            <div class="cis-ref">cap_drop: [ALL] · CIS 5.3</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">No privilege escalation</div>
+            <div class="cis-ref">no-new-privileges: true · CIS 5.25</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">Read-only root filesystem</div>
+            <div class="cis-ref">read_only: true · CIS 5.12</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">PID limits enforced</div>
+            <div class="cis-ref">pids_limit: 256 · CIS 5.28</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">Proper init process</div>
+            <div class="cis-ref">tini as PID 1 · CIS 5.29</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">CPU &amp; memory limits</div>
+            <div class="cis-ref">deploy.resources · CIS 5.10/5.11</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">Log rotation enabled</div>
+            <div class="cis-ref">json-file max-size · CIS 5.7</div>
+          </div>
+        </div>
+        <div class="cis-item">
+          <div class="cis-check">✓</div>
+          <div>
+            <div class="cis-text">Non-root user</div>
+            <div class="cis-ref">USER node · CIS 5.15</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FOOTER ════════════════════════════════════════ -->
+  <footer class="page-footer">
+    <p>MIT — Copyright 2026 AlphaOne LLC · <a href="./">Docs</a> · <a href="https://github.com/alphaonedev/docker-claude-agents">GitHub</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>

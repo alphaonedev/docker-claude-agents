@@ -63,64 +63,11 @@ Every container enforces:
 - [Security](SECURITY.md) — Security model, CIS controls, secret management
 - [Troubleshooting](TROUBLESHOOTING.md) — Common issues and solutions
 
-## Architecture
+## Reference Architecture
 
-```
-                         ┌─────────────────────┐
-                         │  Master Controller   │
-                         │    (orchestrator)    │
-                         └──────────┬──────────┘
-                                    │ decomposes & delegates
-            ┌───────────┬───────────┼───────────┬───────────┐
-            │           │           │           │           │
-       ┌────▼───┐  ┌────▼───┐  ┌───▼────┐  ┌───▼──┐  ┌────▼────┐
-       │Research│  │ Coder  │  │Reviewer│  │Tester│  │Deployer │
-       └────┬───┘  └────┬───┘  └───┬────┘  └───┬──┘  └────┬────┘
-            │           │          │            │           │
-            └───────────┴──────────┴────────────┴───────────┘
-                                   │
-                    ┌──────────────┴──────────────┐
-                    │   Shared Docker Volumes      │
-                    │  tasks/ · status/ · output/  │
-                    └──────────────────────────────┘
-```
+[**View the interactive architecture visualization →**](architecture-visual.html)
 
-```
-                    ┌─────────────────────────────────────┐
-                    │          agent-net (bridge)          │
-                    │                                     │
-                    │  ┌────────┐  ┌────────┐  ┌──────┐  │
-                    │  │ master │  │ coder  │  │ ...  │  │
-                    │  └───┬────┘  └───┬────┘  └──┬───┘  │
-                    │      │           │          │      │
-                    │  ┌───▼───────────▼──────────▼───┐  │
-                    │  │     Docker DNS resolution     │  │
-                    │  └──────────────┬────────────────┘  │
-                    │                 │                    │
-                    │  ┌──────────────▼────────────────┐  │
-                    │  │  MCP servers (when enabled)   │  │
-                    │  │  mcp-github, mcp-postgres...  │  │
-                    │  └──────────────────────────────┘  │
-                    │                                     │
-                    └──────────────────┬──────────────────┘
-                                       │ outbound
-                                       ▼
-                              Anthropic API
-                              api.anthropic.com
-```
-
-```
-node:22-slim
-    └── claude-agent-base (Dockerfile.base)
-            ├── master-controller
-            ├── researcher
-            ├── coder
-            ├── reviewer
-            ├── tester
-            └── deployer
-```
-
-See the full [Architecture](ARCHITECTURE.md) documentation for volume layout, agent lifecycle, and communication protocol details.
+Agent orchestration, network topology, image layering, compose strategy, and CIS compliance — all in one visual reference.
 
 ## License
 
